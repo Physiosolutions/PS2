@@ -1,11 +1,29 @@
-<div align="center">
+# Physio Solutions - Enterprise Operations Engine
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Enterprise operations engine for staff management, rostering, patient leave, and payroll.
 
-  <h1>Built with AI Studio</h2>
+## Overview
+- **Staff Management**: Comprehensive employee profiles, roles, and credentials.
+- **Rostering & Scheduling**: Dynamic calendar views, shift allocations, and leave management.
+- **Payroll & Timesheets**: Automatic calculations and reporting with export support (Excel/PDF).
+- **Patient & Discharge Records**: Integrated patient records and discharge workflow.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Running Locally
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-</div>
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Build for production:
+   ```bash
+   npm run build
+   ```
+
+## Deployment
+This application can be deployed directly to static hosting platforms such as Netlify, Vercel, or GitHub Pages.
