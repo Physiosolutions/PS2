@@ -5009,3 +5009,44 @@ padding: 10px 16px !important;
                             height: 14px;
                             cursor: pointer;
                         }
+
+/* ========================================================
+   UNIVERSAL DATA IMPORTER & MERGE ENGINE STYLES
+   ======================================================== */
+.universal-importer-container {
+    animation: fadeInUniversal 0.25s ease-out;
+}
+
+@keyframes fadeInUniversal {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.universal-importer-modal-box {
+    animation: zoomInModal 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes zoomInModal {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+#uImpDropzone:hover {
+    border-color: var(--primary) !important;
+    background: rgba(0, 75, 135, 0.05) !important;
+}
+
+[data-theme="dark"] #uImpDropzone:hover {
+    background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.uimp-pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}

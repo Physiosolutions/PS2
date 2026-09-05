@@ -1688,6 +1688,9 @@
                                 <button class="action-btn" style="background:var(--warning); justify-content:center;"
                                     id="btn_restore_backup" onclick="triggerRestorePointConfig()"
                                     data-trans-key="🔄 Restore From Backup">🔄 Restore From Backup</button>
+                                <button class="action-btn" style="background:var(--primary); justify-content:center; grid-column:span 2; padding:9px 14px; font-weight:700;"
+                                    id="btn_admin_universal_importer" onclick="openUniversalImporterModal()"
+                                    data-trans-key="📤 Universal Sheet / Data Importer (Combine Across Modules)">📤 Universal Sheet / Data Importer (Combine Across Modules)</button>
                             </div>
                             <div class="form-group">
                                 <label id="lbl_audit_log_retention"
@@ -2901,6 +2904,9 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     style="background:var(--success);"
                                     onclick="exportStaffDirectoryToExcel()" data-trans-key="📥 Excel">📥
                                     Excel</button>
+                                <button class="action-btn"
+                                    style="background:var(--primary);"
+                                    onclick="openUniversalImporterModal('staff_directory')" data-trans-key="📤 Import Staff">📤 Import Staff</button>
                                 <select id="directoryRoleGroupFilter" onchange="filterStaffDirectoryRows()"
                                     style="padding:6px; border-radius:6px; border:1px solid var(--border);">
                                     <option value="all" data-trans-key="All Role Groups">All Role Groups</option>
@@ -2943,13 +2949,20 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                     <div class="p-card span-12"
                         style="padding:12px 16px;overflow:hidden;display:flex;flex-direction:column;gap:12px;">
                         <div
-                            style="display:flex;gap:2px;margin-bottom:0;border-bottom:2px solid var(--border);padding-bottom:0;flex-shrink:0;">
-                            <button class="roster-tab-btn" data-rosterTab="fulltime"
-                                style="padding:8px 16px;font-size:11px;font-weight:700;border:none;background:var(--primary);color:#fff;border-radius:6px 6px 0 0;cursor:pointer;"
-                                onclick="switchRosterTab('fulltime')">🗓️ Full Time Therapists</button>
-                            <button class="roster-tab-btn" data-rosterTab="parttime"
-                                style="padding:8px 16px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--text-muted);border-radius:6px 6px 0 0;cursor:pointer;"
-                                onclick="switchRosterTab('parttime')">🗓️ Part Time Therapists</button>
+                            style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0;border-bottom:2px solid var(--border);padding-bottom:0;flex-shrink:0;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;gap:2px;">
+                                <button class="roster-tab-btn" data-rosterTab="fulltime"
+                                    style="padding:8px 16px;font-size:11px;font-weight:700;border:none;background:var(--primary);color:#fff;border-radius:6px 6px 0 0;cursor:pointer;"
+                                    onclick="switchRosterTab('fulltime')">🗓️ Full Time Therapists</button>
+                                <button class="roster-tab-btn" data-rosterTab="parttime"
+                                    style="padding:8px 16px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--text-muted);border-radius:6px 6px 0 0;cursor:pointer;"
+                                    onclick="switchRosterTab('parttime')">🗓️ Part Time Therapists</button>
+                            </div>
+                            <div style="padding-bottom:4px;">
+                                <button class="action-btn"
+                                    style="background:var(--primary); font-size:10px; padding:6px 12px;"
+                                    onclick="openUniversalImporterModal('roster_engine')" data-trans-key="📤 Import Roster Sheet">📤 Import Roster Sheet</button>
+                            </div>
                         </div>
 
                         <!-- FULL TIME TAB -->
@@ -6169,6 +6182,9 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     style="background:var(--success); padding: 6px 10px; font-size:11px;"
                                     onclick="exportInventoryToExcel()" data-trans-key="📥 Export Excel">📥 Export
                                     Excel</button>
+                                <button class="action-btn"
+                                    style="background:var(--primary); padding: 6px 10px; font-size:11px;"
+                                    onclick="openUniversalImporterModal('inventory')" data-trans-key="📤 Import Stock">📤 Import Stock</button>
                                 <button class="action-btn" onclick="openAddNewInventoryModal()"
                                     data-trans-key="➕ Add New Supply Item">➕ Add New Supply Item</button>
                             </div>
@@ -6534,6 +6550,9 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     <button class="action-btn"
                                         style="background:var(--success); padding: 4px 8px; height:28px;"
                                         onclick="exportRefTrackerToExcel()" data-trans-key="📥 Excel">📥 Excel</button>
+                                    <button class="action-btn"
+                                        style="background:var(--primary); padding: 4px 8px; height:28px;"
+                                        onclick="openUniversalImporterModal('reference_tracker')" data-trans-key="📤 Import">📤 Import</button>
                                 </div>
                             </div>
                         </div>
@@ -6574,14 +6593,27 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                             style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
                             <div>
                                 <h2 id="lbl_export_hub_main_header"
-                                    data-trans-key="📥 Central Operational Export Data Hub">📥 Central Operational
-                                    Export Data Hub</h2>
+                                    data-trans-key="📥 Central Operational Export Data Hub">📥 Central Operations Hub &amp; Importer</h2>
                                 <p id="lbl_export_hub_main_subheader" style="color:var(--text-muted); margin:2px 0 0 0;"
-                                    data-trans-key="Export any system data as PDF or Excel with date range and role filters.">
-                                    Export any system data as PDF or Excel with date range and role filters.</p>
+                                    data-trans-key="Export any system data as PDF or Excel, or bulk-import sheets to merge into operational modules.">
+                                    Export any system data as PDF or Excel, or bulk-import sheets to merge into operational modules.</p>
                             </div>
                         </div>
 
+                        <!-- NAVIGATION TABS: EXPORT VS UNIVERSAL IMPORTER -->
+                        <div style="display:flex; gap:10px; margin-bottom:18px; border-bottom:1px solid var(--border); padding-bottom:12px;">
+                            <button id="btnTabExportView" class="action-btn" onclick="switchExportHubTab('export')"
+                                style="background:var(--primary); color:#fff; font-weight:700; padding:8px 18px; border-radius:8px; font-size:12px; cursor:pointer;">
+                                📥 Export Operations Hub
+                            </button>
+                            <button id="btnTabImportView" class="action-btn" onclick="switchExportHubTab('import')"
+                                style="background:var(--bg-inner); color:var(--text-body); border:1px solid var(--border); font-weight:700; padding:8px 18px; border-radius:8px; font-size:12px; cursor:pointer;">
+                                📤 Universal Data Importer (Combine Sheets)
+                            </button>
+                        </div>
+
+                        <!-- TAB 1: EXPORT CENTRAL -->
+                        <div id="exportHubTab_export">
                         <!-- FILTER BAR -->
                         <div
                             style="background:var(--bg-inner); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:18px; display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px;">
@@ -7225,6 +7257,12 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 data-trans-key="📋 Export Preview">📋 Export Preview</h3>
                             <table class="premium-table" id="exportHubPreviewGrid" style="margin-top:0;" role="table">
                             </table>
+                        </div>
+                        </div> <!-- End exportHubTab_export -->
+
+                        <!-- TAB 2: UNIVERSAL DATA IMPORTER -->
+                        <div id="exportHubTab_import" style="display:none; padding-top:4px;">
+                            <div id="uImpExportHubMount"></div>
                         </div>
                     </div>
                 </div>
@@ -9359,6 +9397,9 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                         style="background:var(--success);padding:6px 10px;font-size:10px;"
                                         onclick="runExport('fdo_sheets','excel')" data-trans-key="📥 Excel">📥
                                         Excel</button>
+                                    <button class="action-btn"
+                                        style="background:var(--primary);padding:6px 10px;font-size:10px;"
+                                        onclick="openUniversalImporterModal('fdo_sheets')" data-trans-key="📤 Import Sheet">📤 Import Sheet</button>
                                 </div>
                             </div>
                             <p style="color:var(--text-muted);margin:0 0 12px 0;font-size:10px;"
@@ -9900,6 +9941,7 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     <input type="date" id="ptDatePicker" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:11px;background:var(--bg-inner);color:var(--text-body);">
                                     <button class="p-btn p-btn-primary" onclick="addPatientTrackerRow()" data-trans-key="➕ Add Patient">➕ Add Patient</button>
                                     <button class="p-btn" style="background:var(--success);color:#fff;" onclick="exportPatientTracker()" data-trans-key="📥 Export">📥 Export</button>
+                                    <button class="p-btn" style="background:var(--primary);color:#fff;" onclick="openUniversalImporterModal('patient_tracker')" data-trans-key="📤 Import Sheet">📤 Import Sheet</button>
                                 </div>
                             </div>
                             <p style="color:var(--text-muted);margin:0 0 12px 0;font-size:10px;flex-shrink:0;">ID card auto-fills from repository. Click<strong>💾</strong>to save patient for future auto-fill.<span id="ptActiveDateLabel" style="margin-left:12px;font-weight:600;color:var(--primary);"></span></p>
@@ -10028,6 +10070,9 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <button class="action-btn"
                                     style="background:var(--success);padding:4px 8px;font-size:10px;"
                                     onclick="exportSolarelleExcel()" data-trans-key="📥 Excel">📥 Excel</button>
+                                <button class="action-btn"
+                                    style="background:var(--primary);padding:4px 8px;font-size:10px;"
+                                    onclick="openUniversalImporterModal('solarelle_patients')" data-trans-key="📤 Import Sheet">📤 Import Sheet</button>
                                 <span id="solarelleSaveIndicator"
                                     style="font-size:10px;color:var(--success);opacity:0;transition:opacity 0.3s;"
                                     data-trans-key="💾 Auto-saved">💾 Auto-saved</span>
@@ -10802,6 +10847,7 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
     <div id="systemGlobalModalMount"></div>
 
 <script src="app.js"></script>
+<script src="universal_importer.js"></script>
 </body>
 
 </html>
