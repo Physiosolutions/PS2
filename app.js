@@ -5539,6 +5539,9 @@
                     function triggerSelectedModuleShift(targetModuleId) {
                         if (targetModuleId === 'ot_attendance') targetModuleId = 'fdo_attendance';
                         globalActiveViewportModule = targetModuleId;
+                        if (window.innerWidth <= 768 && typeof toggleSidebarLayout === 'function') {
+                            toggleSidebarLayout(false);
+                        }
                         document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
                         document.querySelectorAll('.view-module').forEach(el => el.classList.add('hidden'));
 
@@ -17290,20 +17293,32 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     // ---------------------------------------------------------
                     // Sidebar Layout Toggle & Workspace Stretching Handler
                     // ---------------------------------------------------------
-                    function toggleSidebarLayout() {
+                    function toggleSidebarLayout(forceState) {
                         const sidebar = document.getElementById('sidebarContainerElement');
                         if (!sidebar) return;
+                        const overlay = document.getElementById('sidebarOverlay');
+                        const isMobile = window.innerWidth <= 768;
 
-                        // On mobile (< 768px), use overlay mode with expanded class
-                        if (window.innerWidth <= 768) {
-                            const isExpanded = sidebar.classList.toggle('expanded');
-                            const overlay = document.getElementById('sidebarOverlay');
-                            if (overlay) overlay.classList.toggle('active', isExpanded);
-                            if (isExpanded) {
-                                sidebar.classList.remove('collapsed');
+                        if (isMobile) {
+                            let isExpanded;
+                            if (typeof forceState === 'boolean') {
+                                isExpanded = forceState;
                             } else {
-                                sidebar.classList.add('collapsed');
+                                isExpanded = !sidebar.classList.contains('expanded');
                             }
+
+                            if (isExpanded) {
+                                sidebar.classList.add('expanded');
+                                sidebar.classList.remove('collapsed');
+                                if (overlay) overlay.classList.add('active');
+                                document.body.classList.add('mobile-sidebar-open');
+                            } else {
+                                sidebar.classList.remove('expanded');
+                                sidebar.classList.add('collapsed');
+                                if (overlay) overlay.classList.remove('active');
+                                document.body.classList.remove('mobile-sidebar-open');
+                            }
+
                             const mblLogo = document.getElementById('topNavLogo');
                             if (mblLogo) {
                                 if (!isExpanded) {
@@ -17321,7 +17336,12 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
     // Desktop with hover-expand: toggle button is hidden, skip collapse behavior
     if (window.innerWidth > 768) return;
-    const isCollapsed = sidebar.classList.toggle('collapsed');
+    let isCollapsed;
+    if (typeof forceState === 'boolean') {
+        isCollapsed = !forceState;
+    } else {
+        isCollapsed = sidebar.classList.toggle('collapsed');
+    }
 
     const topNavLogo = document.getElementById('topNavLogo');
     if (topNavLogo) {
@@ -17356,14 +17376,101 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             sidebar.classList.remove('expanded');
                             sidebar.classList.remove('collapsed');
                             if (overlay) overlay.classList.remove('active');
+                            document.body.classList.remove('mobile-sidebar-open');
                             const logo = document.getElementById('topNavLogo');
                             if (logo) logo.style.display = 'block';
                         } else {
                             // On mobile, ensure collapsed class is present by default
                             sidebar.classList.add('collapsed');
                             sidebar.classList.remove('expanded');
+                            if (overlay) overlay.classList.remove('active');
+                            document.body.classList.remove('mobile-sidebar-open');
                         }
                     });
+
+                    // Mobile touch interactions & edge swipe gestures
+                    (function initMobileSidebarTouch() {
+                        function setupTouch() {
+                            const toggleBtn = document.getElementById('sidebarToggleBtn');
+                            const overlay = document.getElementById('sidebarOverlay');
+                            const closeBtn = document.getElementById('sidebarCloseBtnMobile');
+                            const sidebar = document.getElementById('sidebarContainerElement');
+
+                            if (toggleBtn && !toggleBtn._touchBound) {
+                                toggleBtn._touchBound = true;
+                                toggleBtn.addEventListener('touchend', function (e) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleSidebarLayout();
+                                }, { passive: false });
+                            }
+
+                            if (overlay && !overlay._touchBound) {
+                                overlay._touchBound = true;
+                                overlay.addEventListener('touchend', function (e) {
+                                    e.preventDefault();
+                                    toggleSidebarLayout(false);
+                                }, { passive: false });
+                            }
+
+                            if (closeBtn && !closeBtn._touchBound) {
+                                closeBtn._touchBound = true;
+                                closeBtn.addEventListener('touchend', function (e) {
+                                    e.preventDefault();
+                                    toggleSidebarLayout(false);
+                                }, { passive: false });
+                            }
+
+                            // Swipe gestures for effortless mobile navigation
+                            let startX = 0;
+                            let startY = 0;
+                            let isTouching = false;
+
+                            document.addEventListener('touchstart', function (e) {
+                                if (e.touches && e.touches.length === 1) {
+                                    startX = e.touches[0].clientX;
+                                    startY = e.touches[0].clientY;
+                                    isTouching = true;
+                                }
+                            }, { passive: true });
+
+                            document.addEventListener('touchend', function (e) {
+                                if (!isTouching || !e.changedTouches || e.changedTouches.length === 0) return;
+                                isTouching = false;
+                                const endX = e.changedTouches[0].clientX;
+                                const endY = e.changedTouches[0].clientY;
+                                const deltaX = endX - startX;
+                                const deltaY = endY - startY;
+
+                                if (Math.abs(deltaY) > 75) return;
+                                if (window.innerWidth > 768) return;
+
+                                const isExpanded = sidebar && sidebar.classList.contains('expanded');
+
+                                // Swipe right from left edge (within 40px) opens sidebar
+                                if (!isExpanded && startX <= 40 && deltaX > 50) {
+                                    toggleSidebarLayout(true);
+                                }
+                                // Swipe left when sidebar is open closes it
+                                else if (isExpanded && deltaX < -50) {
+                                    toggleSidebarLayout(false);
+                                }
+                            }, { passive: true });
+
+                            // Escape key closes mobile sidebar
+                            document.addEventListener('keydown', function (e) {
+                                if (e.key === 'Escape') {
+                                    toggleSidebarLayout(false);
+                                }
+                            });
+                        }
+
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', setupTouch);
+                        } else {
+                            setupTouch();
+                        }
+                    })();
 
                     // =========================================================
                     // UNIFIED INITIALIZATION PROCESS (Start after DOM is ready)

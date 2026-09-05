@@ -2256,13 +2256,13 @@ padding: 10px 16px !important;
 
         /* ===== RESPONSIVE: buttons shrink, layout stays ===== */
         @media (max-width: 1400px) {
-            button, .action-btn { padding: 4px 8px !important; font-size: 10px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 4px 8px !important; font-size: 10px !important; }
         }
         @media (max-width: 1200px) {
-            button, .action-btn { padding: 3px 6px !important; font-size: 9px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 3px 6px !important; font-size: 9px !important; }
         }
         @media (max-width: 992px) {
-            button, .action-btn { padding: 2px 5px !important; font-size: 8px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 2px 5px !important; font-size: 8px !important; }
             .staff-grid-layout { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
             .staff-card { padding: 10px; }
             .staff-card-name { font-size: 11px; }
@@ -2271,7 +2271,7 @@ padding: 10px 16px !important;
             .staff-card-body { padding-top: 6px; margin-bottom: 6px; }
         }
         @media (max-width: 768px) {
-            button, .action-btn { padding: 2px 4px !important; font-size: 8px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 2px 4px !important; font-size: 8px !important; }
             .staff-grid-layout { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
             .staff-card { padding: 8px; }
             .staff-card-header { gap: 6px; margin-bottom: 6px; }
@@ -2475,19 +2475,52 @@ padding: 10px 16px !important;
 
                         @media (max-width: 768px) {
                             .sidebar {
-                                width: 0;
-                                padding: 0;
-                                border: none;
-                                box-shadow: none;
-                                position: fixed;
-                                z-index: 1000;
-                                height: 100vh;
+                                position: fixed !important;
+                                top: 0 !important;
+                                left: 0 !important;
+                                bottom: 0 !important;
+                                width: 280px !important;
+                                max-width: 82vw !important;
+                                height: 100vh !important;
+                                height: 100dvh !important;
+                                z-index: 1050 !important;
+                                transform: translateX(-100%) !important;
+                                transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.25s ease !important;
+                                visibility: hidden !important;
+                                pointer-events: none !important;
+                                overflow-y: auto !important;
+                                overflow-x: hidden !important;
+                                -webkit-overflow-scrolling: touch !important;
+                                background: var(--sidebar-bg) !important;
+                                border-right: 1px solid var(--border) !important;
+                                box-shadow: none !important;
+                                padding: 0 !important;
                             }
 
                             .sidebar.expanded {
-                                width: 280px;
-                                padding: 0;
-                                box-shadow: 2px 0 40px rgba(0, 0, 0, 0.3);
+                                transform: translateX(0) !important;
+                                visibility: visible !important;
+                                pointer-events: auto !important;
+                                box-shadow: 6px 0 35px rgba(0, 0, 0, 0.45) !important;
+                            }
+
+                            .sidebar.expanded * {
+                                opacity: 1 !important;
+                                pointer-events: auto !important;
+                            }
+
+                            .sidebar-brand {
+                                position: relative !important;
+                                padding: 16px 54px 14px 16px !important;
+                            }
+
+                            .sidebar-item {
+                                min-height: 44px !important;
+                                padding: 12px 14px !important;
+                                font-size: 13.5px !important;
+                                gap: 12px !important;
+                                touch-action: manipulation !important;
+                                -webkit-tap-highlight-color: transparent !important;
                             }
 
                             .grid-layout {
@@ -2570,17 +2603,100 @@ padding: 10px 16px !important;
                             /* Sidebar overlay backdrop */
                             .sidebar-overlay {
                                 display: none;
-                                position: fixed;
-                                top: 0;
-                                left: 0;
-                                right: 0;
-                                bottom: 0;
-                                background: rgba(0, 0, 0, 0.5);
-                                z-index: 999;
+                                position: fixed !important;
+                                top: 0 !important;
+                                left: 0 !important;
+                                right: 0 !important;
+                                bottom: 0 !important;
+                                width: 100vw !important;
+                                height: 100vh !important;
+                                height: 100dvh !important;
+                                background: rgba(0, 0, 0, 0.55) !important;
+                                backdrop-filter: blur(3px) !important;
+                                -webkit-backdrop-filter: blur(3px) !important;
+                                z-index: 1040 !important;
+                                opacity: 0;
+                                transition: opacity 0.25s ease !important;
+                                pointer-events: none;
+                                cursor: pointer;
+                                -webkit-tap-highlight-color: transparent;
                             }
 
                             .sidebar-overlay.active {
-                                display: block;
+                                display: block !important;
+                                opacity: 1 !important;
+                                pointer-events: auto !important;
+                            }
+
+                            .sidebar-toggle-btn,
+                            #sidebarToggleBtn {
+                                display: inline-flex !important;
+                                align-items: center !important;
+                                justify-content: center !important;
+                                width: 44px !important;
+                                height: 44px !important;
+                                min-width: 44px !important;
+                                min-height: 44px !important;
+                                padding: 0 !important;
+                                font-size: 18px !important;
+                                line-height: 1 !important;
+                                background: var(--bg-surface-elevated, rgba(0, 75, 135, 0.08)) !important;
+                                border: 1px solid var(--border, rgba(0, 75, 135, 0.22)) !important;
+                                border-radius: 8px !important;
+                                color: var(--text-heading, #002244) !important;
+                                cursor: pointer !important;
+                                touch-action: manipulation !important;
+                                -webkit-tap-highlight-color: transparent !important;
+                                user-select: none !important;
+                                flex-shrink: 0 !important;
+                                z-index: 35 !important;
+                                transition: background-color 0.15s, transform 0.1s !important;
+                            }
+
+                            .sidebar-toggle-btn:active,
+                            #sidebarToggleBtn:active {
+                                background: rgba(0, 75, 135, 0.22) !important;
+                                transform: scale(0.92) !important;
+                            }
+
+                            .sidebar-toggle-btn svg,
+                            #sidebarToggleBtn svg {
+                                width: 22px !important;
+                                height: 22px !important;
+                                stroke: currentColor !important;
+                                stroke-width: 2.2 !important;
+                                pointer-events: none !important;
+                            }
+
+                            .sidebar-close-btn-mobile {
+                                display: inline-flex !important;
+                                align-items: center !important;
+                                justify-content: center !important;
+                                position: absolute !important;
+                                top: 12px !important;
+                                right: 12px !important;
+                                width: 38px !important;
+                                height: 38px !important;
+                                min-width: 38px !important;
+                                min-height: 38px !important;
+                                border-radius: 50% !important;
+                                background: rgba(255, 255, 255, 0.18) !important;
+                                border: 1px solid rgba(255, 255, 255, 0.3) !important;
+                                color: #ffffff !important;
+                                font-size: 18px !important;
+                                font-weight: 700 !important;
+                                line-height: 1 !important;
+                                cursor: pointer !important;
+                                z-index: 1060 !important;
+                                touch-action: manipulation !important;
+                                -webkit-tap-highlight-color: transparent !important;
+                                padding: 0 !important;
+                                transition: background-color 0.15s, transform 0.1s !important;
+                            }
+
+                            .sidebar-close-btn-mobile:active {
+                                background: rgba(255, 255, 255, 0.35) !important;
+                                transform: scale(0.92) !important;
                             }
 
                             /* Top nav mobile: title truncation and portal switcher collapse */
@@ -3007,10 +3123,11 @@ padding: 10px 16px !important;
                                 max-width: 90px;
                             }
                             .sidebar-overlay.active {
-                                display: block;
+                                display: block !important;
                             }
                             .sidebar.expanded {
-                                width: 280px;
+                                transform: translateX(0) !important;
+                                visibility: visible !important;
                             }
                             #topNavLogo {
                                 height: 40px !important;
