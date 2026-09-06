@@ -610,6 +610,10 @@ padding: 10px 16px !important;
             display: none;
         }
 
+        .sidebar-close-btn-mobile {
+            display: none;
+        }
+
         .sidebar-brand {
             padding: 20px 18px 14px;
             display: flex;
@@ -3294,6 +3298,12 @@ padding: 10px 16px !important;
                             }
                             .sidebar:not(:hover) ~ .main-wrapper {
                                 width: calc(100vw - 60px) !important;
+                            }
+                            .sidebar:not(:hover) ~ .main-wrapper #topNavLogo {
+                                display: block !important;
+                            }
+                            .sidebar:hover ~ .main-wrapper #topNavLogo {
+                                display: none !important;
                             }
                             #sidebarToggleBtn {
                                 display: none !important;
