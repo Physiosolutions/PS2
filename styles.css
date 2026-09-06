@@ -3301,8 +3301,15 @@ padding: 10px 16px !important;
                             }
                             .sidebar:not(:hover) ~ .main-wrapper #topNavLogo {
                                 display: block !important;
+                                height: 44px !important;
+                                width: 44px !important;
+                                flex: 0 0 auto;
+                                margin-right: 8px;
                             }
                             .sidebar:hover ~ .main-wrapper #topNavLogo {
+                                display: none !important;
+                            }
+                            .sidebar:not(:hover) #sidebarCollapsedBrandIcon {
                                 display: none !important;
                             }
                             #sidebarToggleBtn {
