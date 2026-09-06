@@ -8,6 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Physio Solutions - Enterprise Operations Engine</title>
     <meta name="description" content="Physio Solutions - Enterprise operations engine for staff management, rostering, leave, and payroll.">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="PS Matrix">
     <meta name="theme-color" content="#004b87">
@@ -20,7 +21,7 @@
         rel="stylesheet">
 
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="html2pdf.bundle.min.js"></script>
 <link rel="stylesheet" href="styles.css">
     <meta http-equiv="Content-Security-Policy"
         content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.sheetjs.com https://cdnjs.cloudflare.com https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https:; font-src 'self' https://fonts.gstatic.com data: https:; img-src 'self' data: blob: https:; connect-src 'self' https: data: blob:; base-uri 'self';">
@@ -52,22 +53,24 @@
                         </div>
                     </div>
                     <div id="authDynamicFormArea">
-                        <div class="form-group">
-                            <label id="lbl_auth_email_l" data-trans-key="EMAIL OR USERNAME">EMAIL OR USERNAME</label>
-                            <input type="text" id="authFieldUserEmail" placeholder="username or email@domain.mv"
-                                autocomplete="username" spellcheck="false"
-                                data-trans-placeholder-key="username or email@domain.mv">
-                        </div>
-                        <div class="form-group">
-                            <label id="lbl_auth_pass_l" data-trans-key="PASSWORD">PASSWORD</label>
-                            <input type="password" id="authFieldUserPassword" placeholder="••••••••"
-                                autocomplete="current-password" data-trans-placeholder-key="••••••••">
-                        </div>
-                        <a class="forgot-password-link" id="lbl_forgot_pass_l"
-                            onclick="renderForgotPasswordFormStepOne()">Forgot Password?</a>
-                        <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;"
-                            id="lbl_auth_btn_l" onclick="executeSimulatedAuthenticationChallenge()"
-                            data-trans-key="Login">Login</button>
+                        <form id="authLoginForm" onsubmit="event.preventDefault(); executeSimulatedAuthenticationChallenge();" style="margin: 0; padding: 0;">
+                            <div class="form-group">
+                                <label id="lbl_auth_email_l" data-trans-key="EMAIL OR USERNAME">EMAIL OR USERNAME</label>
+                                <input type="text" id="authFieldUserEmail" placeholder="username or email@domain.mv"
+                                    autocomplete="username" spellcheck="false"
+                                    data-trans-placeholder-key="username or email@domain.mv">
+                            </div>
+                            <div class="form-group">
+                                <label id="lbl_auth_pass_l" data-trans-key="PASSWORD">PASSWORD</label>
+                                <input type="password" id="authFieldUserPassword" placeholder="••••••••"
+                                    autocomplete="current-password" data-trans-placeholder-key="••••••••">
+                            </div>
+                            <a class="forgot-password-link" id="lbl_forgot_pass_l"
+                                onclick="renderForgotPasswordFormStepOne()">Forgot Password?</a>
+                            <button type="submit" class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;"
+                                id="lbl_auth_btn_l"
+                                data-trans-key="Login">Login</button>
+                        </form>
                         <div
                             style="margin: 10px 0; text-align: center; color: var(--text-muted); font-size: 8px; font-weight: 700; letter-spacing: 0.5px;">
                             OR SSO ENVELOPE GATEWAY</div>
@@ -10621,12 +10624,13 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                             data-trans-key="Modify your active system login password securely from this verified terminal session gateway.">
                             Modify your active system login password securely from this verified terminal session
                             gateway.</p>
-                        <div style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+                        <form id="profilePasswordUpdateForm" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:0; padding:0;" onsubmit="event.preventDefault(); commitInternalPasswordChange();">
                             <div class="p-field" style="flex:1; min-width:180px; margin-bottom:0;">
                                 <label data-trans-key="Current Password">Current Password</label>
                                 <div class="p-input">
                                     <span class="ico" data-trans-key="🔒">🔒</span>
                                     <input type="password" id="profileCurrentPasswordInput" placeholder="••••••••"
+                                        autocomplete="current-password"
                                         data-trans-placeholder-key="••••••••">
                                     <span class="p-show" onclick="toggleProfilePw('profileCurrentPasswordInput',this)"
                                         data-trans-key="SHOW">SHOW</span>
@@ -10637,6 +10641,7 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <div class="p-input">
                                     <span class="ico" data-trans-key="🔒">🔒</span>
                                     <input type="password" id="profileNewPasswordInput" placeholder="••••••••"
+                                        autocomplete="new-password"
                                         data-trans-placeholder-key="••••••••">
                                     <span class="p-show" onclick="toggleProfilePw('profileNewPasswordInput',this)"
                                         data-trans-key="SHOW">SHOW</span>
@@ -10647,15 +10652,16 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <div class="p-input">
                                     <span class="ico" data-trans-key="🔒">🔒</span>
                                     <input type="password" id="profileConfirmPasswordInput" placeholder="••••••••"
+                                        autocomplete="new-password"
                                         data-trans-placeholder-key="••••••••">
                                     <span class="p-show" onclick="toggleProfilePw('profileConfirmPasswordInput',this)"
                                         data-trans-key="SHOW">SHOW</span>
                                 </div>
                             </div>
-                            <button class="p-btn p-btn-primary"
+                            <button type="submit" class="p-btn p-btn-primary"
                                 style="background:linear-gradient(135deg,var(--primary),#003366); padding:9px 20px; height:38px;"
-                                onclick="commitInternalPasswordChange()" data-trans-key="🛡️ Update">🛡️ Update</button>
-                        </div>
+                                data-trans-key="🛡️ Update">🛡️ Update</button>
+                        </form>
                     </div>
 
                     <!-- BIOMETRIC SECURITY -->

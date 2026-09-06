@@ -4667,6 +4667,7 @@
 
                         // Build the login form HTML (shared between both layouts)
                         const loginFormHtml = `
+                <form id="authDynamicLoginForm" onsubmit="event.preventDefault(); executeSimulatedAuthenticationChallenge();" style="margin: 0; padding: 0;">
                 <div class="form-group">
                     <label id="lbl_auth_email_l">${lookupTranslationValue("Email or Username")}</label>
                     <input type="text" id="authFieldUserEmail" placeholder="username or email@domain.mv" autocomplete="username" spellcheck="false">
@@ -4676,9 +4677,10 @@
                     <input type="password" id="authFieldUserPassword" placeholder="••••••••" autocomplete="current-password">
                 </div>
                 <a class="forgot-password-link" id="lbl_forgot_pass_l" onclick="renderForgotPasswordFormStepOne()">${lookupTranslationValue("Forgot Password?")}</a>
-                <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" id="lbl_auth_btn_l" onclick="executeSimulatedAuthenticationChallenge()">
+                <button type="submit" class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" id="lbl_auth_btn_l">
                     ${lookupTranslationValue("Login")}
                 </button>
+                </form>
                 <div style="margin: 10px 0; text-align: center; color: var(--text-muted); font-size: 8px; font-weight: 700; letter-spacing: 0.5px;">OR SSO ENVELOPE GATEWAY</div>
                 <button class="google-btn" onclick="triggerGoogleOAuthSimulatedFlow()">
                     <svg width="14" height="14" viewBox="0 0 24 24" style="margin-right: 4px;"><path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.11C18.416 1.872 15.62 1 12.24 1 5.48 1 0 6.48 0 13.2s5.48 12.2 12.24 12.2c7.055 0 11.75-4.91 11.75-11.93 0-.807-.087-1.427-.193-1.985H12.24z"/></svg>
@@ -5176,18 +5178,20 @@
                     function renderForgotPasswordFormStepThree(email) {
                         const formArea = getActiveAuthFormArea();
                         formArea.innerHTML = `
+                <form id="recoveryPasswordForm" onsubmit="event.preventDefault(); executeRecoveryFinalSubmit('${email}');" style="margin:0; padding:0;">
                 <h3 style="margin-bottom:6px;">🔐 Phase 3: Set Credentials</h3>
                 <p style="color:var(--text-muted); margin-bottom:12px; font-size:10px;">Select a strong cryptographic password string containing at least 8 characters.</p>
                 <div class="form-group">
                     <label>New Passphrase</label>
-                    <input type="password" id="recoveryNewPass" placeholder="••••••••" oninput="assessPassComplexityStrength()">
+                    <input type="password" id="recoveryNewPass" placeholder="••••••••" autocomplete="new-password" oninput="assessPassComplexityStrength()">
                     <div id="passStrengthMeter" style="height:4px; background:#e2e8f0; border-radius:2px; margin-top:4px;"></div>
                 </div>
                 <div class="form-group">
                     <label>Confirm Passphrase</label>
-                    <input type="password" id="recoveryConfirmPass" placeholder="••••••••">
+                    <input type="password" id="recoveryConfirmPass" placeholder="••••••••" autocomplete="new-password">
                 </div>
-                <button class="action-btn" style="width:100%; justify-content:center; margin-bottom:8px;" onclick="executeRecoveryFinalSubmit('${email}')">Compile Credentials Overwrite</button>
+                <button type="submit" class="action-btn" style="width:100%; justify-content:center; margin-bottom:8px;">Compile Credentials Overwrite</button>
+                </form>
             `;
                     }
                     function getActiveGroupId() {
@@ -8391,7 +8395,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
         <div class="system-inline-modal-overlay">
             <div class="system-inline-modal-box" style="width: 600px; max-height: 85vh; overflow-y: auto;">
                 <h3 style="margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:6px;">➕ Register Clinical Staff Profile</h3>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <form id="addStaffModalForm" onsubmit="event.preventDefault(); commitAddNewStaffRoster();" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0; padding:0;">
                     <div class="form-group">
                         <label>Full Legal Name</label>
                         <input type="text" id="addStName" placeholder="e.g. Hawwa Lua">
@@ -8460,7 +8464,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     </div>
                     <div class="form-group">
                         <label>Set Starting Password</label>
-                        <input type="password" id="addStPassword" placeholder="••••••••" value="staff">
+                        <input type="password" id="addStPassword" placeholder="••••••••" value="staff" autocomplete="new-password">
                     </div>
                     <div class="form-group">
                         <label>Joining Date</label>
@@ -8496,7 +8500,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                  </div>
                  <!-- Any future custom fields now automatically align inside the same grid -->
                  ${extraInputsHtml}
-             </div>
+             </form>
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
                     <button class="action-btn" style="background:var(--danger);" onclick="closeSystemModalBox()">Cancel</button>
                     <button class="action-btn" style="background:var(--success);" onclick="commitAddNewStaffRoster()">Create Profile Node</button>
@@ -17568,6 +17572,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     function renderDashboardLeaveVerificationQueue() {
                         const tbody = document.getElementById('dashboardLeaveVerificationBody');
                         if (!tbody) return;
+                        if (!currentActiveSessionUser || !currentActiveSessionUser.position) return;
                         const userPos = currentActiveSessionUser.position;
                         const canViewAll = allowedManagementDashboardRoles.includes(userPos) || allowedLeaveApproverRoles.includes(userPos);
                         const canApprove = allowedLeaveApproverRoles.includes(userPos);
@@ -21213,6 +21218,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     }
 
                     function switchCommsSubTab(tab) {
+                        if (!currentActiveSessionUser || !currentActiveSessionUser.position) return;
                         document.querySelectorAll('.comms-sub-panel').forEach(p => p.classList.add('hidden'));
                         document.querySelectorAll('[id^="btn_comms_tab_"]').forEach(b => b.classList.remove('active'));
                         if (tab === 'broadcast') {
@@ -21275,6 +21281,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     }
 
                     function checkAndTriggerScheduledBroadcasts() {
+                        if (!currentActiveSessionUser || !currentActiveSessionUser.position) return;
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
                         const todayStr = today.toISOString().split('T')[0];
