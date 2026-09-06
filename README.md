@@ -8,22 +8,26 @@ Enterprise operations engine for staff management, rostering, patient leave, and
 - **Payroll & Timesheets**: Automatic calculations and reporting with export support (Excel/PDF).
 - **Patient & Discharge Records**: Integrated patient records and discharge workflow.
 
-## Running Locally
+## How to run
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+This is a static web app — no build step or server required.
 
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
+### Option 1: Open locally
+Double-click `index.html` in a browser, or serve the folder:
 
-3. Build for production:
-   ```bash
-   npm run build
-   ```
+```bash
+npx serve .
+```
 
-## Deployment
-This application can be deployed directly to static hosting platforms such as Netlify, Vercel, or GitHub Pages.
+### Option 2: GitHub Pages
+1. In the repo, go to **Settings → Pages**.
+2. Under **Source**, select **Deploy from a branch**.
+3. Branch: `main`, folder: `/ (root)`.
+4. Save. Your app is live at `https://<username>.github.io/<repo>/`.
+
+## Files
+- `index.html` — app markup
+- `styles.css` — all styles
+- `app.js` — all application logic
+- `html2pdf.bundle.min.js` — local PDF export library
+- `sw.js` — simple service worker (registers on HTTPS)
