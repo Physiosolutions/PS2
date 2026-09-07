@@ -2511,7 +2511,7 @@ padding: 10px 16px !important;
                                 background: var(--sidebar-bg) !important;
                                 border-right: 1px solid var(--border) !important;
                                 box-shadow: none !important;
-                                padding: env(safe-area-inset-top) 0 0 0 !important;
+                                padding: max(env(safe-area-inset-top), 44px) 0 max(env(safe-area-inset-bottom), 16px) 0 !important;
                             }
 
                             .sidebar.expanded {
