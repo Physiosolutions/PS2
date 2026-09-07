@@ -2511,7 +2511,7 @@ padding: 10px 16px !important;
                                 background: var(--sidebar-bg) !important;
                                 border-right: 1px solid var(--border) !important;
                                 box-shadow: none !important;
-                                padding: 0 !important;
+                                padding: env(safe-area-inset-top) 0 0 0 !important;
                             }
 
                             .sidebar.expanded {
@@ -2529,6 +2529,13 @@ padding: 10px 16px !important;
                             .sidebar-brand {
                                 position: relative !important;
                                 padding: 16px 54px 14px 16px !important;
+                            }
+
+                            .sidebar-menu {
+                                pointer-events: auto !important;
+                                touch-action: pan-y !important;
+                                -webkit-overflow-scrolling: touch !important;
+                                padding-top: max(10px, env(safe-area-inset-top)) !important;
                             }
 
                             .sidebar-item {
