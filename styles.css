@@ -2282,7 +2282,10 @@ padding: 10px 16px !important;
                 min-height: 52px;
             }
             .custom-modal-btn:not([style*="background"]) {
-                width: 100% !important;
+                display: block !important;
+                margin-left: auto !important;
+                margin-right: auto !important;
+                width: 60% !important;
                 background: var(--primary) !important;
                 color: #fff !important;
             }
