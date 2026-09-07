@@ -3148,7 +3148,7 @@ padding: 10px 16px !important;
                                 padding: 16px 12px !important;
                             }
                             .login-card .form-group label {
-                                font-size: 13px !important;
+                                font-size: 14px !important;
                             }
                             .login-card .form-group input,
                             .login-card .form-group select {
@@ -3157,10 +3157,6 @@ padding: 10px 16px !important;
                             }
                             .login-card .form-group input::placeholder {
                                 font-size: 15px !important;
-                            }
-                            .login-card .auth-btn {
-                                font-size: 16px !important;
-                                padding: 14px 16px !important;
                             }
                             .login-card .forgot-password-link {
                                 font-size: 14px !important;
@@ -3231,6 +3227,25 @@ padding: 10px 16px !important;
                             .action-btn {
                                 padding: 4px 8px !important;
                                 font-size: 9px !important;
+                            }
+                            #lbl_auth_btn_l,
+                            .login-card .action-btn {
+                                font-size: 18px !important;
+                                padding: 16px 20px !important;
+                                min-height: 56px;
+                            }
+                            .login-card .google-btn {
+                                font-size: 16px !important;
+                                padding: 16px 20px !important;
+                                min-height: 56px;
+                                margin-top: 12px;
+                            }
+                            .login-card .google-btn svg {
+                                width: 18px !important;
+                                height: 18px !important;
+                            }
+                            .login-card .forgot-password-link {
+                                font-size: 15px !important;
                             }
                             table {
                                 font-size: 9px !important;
