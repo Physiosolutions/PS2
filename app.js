@@ -17402,11 +17402,10 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                             if (toggleBtn && !toggleBtn._touchBound) {
                                 toggleBtn._touchBound = true;
-                                toggleBtn.addEventListener('touchend', function (e) {
-                                    e.preventDefault();
+                                toggleBtn.addEventListener('click', function (e) {
                                     e.stopPropagation();
                                     toggleSidebarLayout();
-                                }, { passive: false });
+                                });
                             }
 
                             if (overlay && !overlay._touchBound) {
