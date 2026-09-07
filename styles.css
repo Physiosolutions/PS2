@@ -2260,13 +2260,13 @@ padding: 10px 16px !important;
 
         /* ===== RESPONSIVE: buttons shrink, layout stays ===== */
         @media (max-width: 1400px) {
-            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 4px 8px !important; font-size: 10px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile):not(#lbl_auth_btn_l):not(.google-btn):not(.split-login-btn):not(.split-google-btn), .action-btn:not(#lbl_auth_btn_l) { padding: 4px 8px !important; font-size: 10px !important; }
         }
         @media (max-width: 1200px) {
-            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 3px 6px !important; font-size: 9px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile):not(#lbl_auth_btn_l):not(.google-btn):not(.split-login-btn):not(.split-google-btn), .action-btn:not(#lbl_auth_btn_l) { padding: 3px 6px !important; font-size: 9px !important; }
         }
         @media (max-width: 992px) {
-            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 2px 5px !important; font-size: 8px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile):not(#lbl_auth_btn_l):not(.google-btn):not(.split-login-btn):not(.split-google-btn), .action-btn:not(#lbl_auth_btn_l) { padding: 2px 5px !important; font-size: 8px !important; }
             .staff-grid-layout { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
             .staff-card { padding: 10px; }
             .staff-card-name { font-size: 11px; }
@@ -2275,7 +2275,7 @@ padding: 10px 16px !important;
             .staff-card-body { padding-top: 6px; margin-bottom: 6px; }
         }
         @media (max-width: 768px) {
-            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile), .action-btn { padding: 2px 4px !important; font-size: 8px !important; }
+            button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile):not(#lbl_auth_btn_l):not(.google-btn):not(.split-login-btn):not(.split-google-btn), .action-btn:not(#lbl_auth_btn_l) { padding: 2px 4px !important; font-size: 8px !important; }
             .staff-grid-layout { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
             .staff-card { padding: 8px; }
             .staff-card-header { gap: 6px; margin-bottom: 6px; }
