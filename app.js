@@ -5511,6 +5511,20 @@
                                 appendMenuAnchor(menu, modKey, displayLabel, () => triggerSelectedModuleShift(modKey));
                             }
                         });
+
+                        // Logout / Exit action, always available
+                        const logoutLi = document.createElement('li');
+                        logoutLi.className = 'sidebar-item';
+                        logoutLi.style.cursor = 'pointer';
+                        logoutLi.style.marginTop = 'auto';
+                        logoutLi.innerHTML = `<span style="font-size:15px;width:22px;text-align:center;flex-shrink:0;">❌</span><span class="sidebar-item-text">Exit Operations Terminal</span>`;
+                        logoutLi.onclick = function () {
+                            if (window.innerWidth <= 768 && typeof toggleSidebarLayout === 'function') {
+                                toggleSidebarLayout(false);
+                            }
+                            if (typeof terminateSession === 'function') terminateSession();
+                        };
+                        menu.appendChild(logoutLi);
                     }
 
                     const sidebarIcons = {
