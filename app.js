@@ -1412,8 +1412,8 @@
                 <div class="system-inline-modal-overlay">
                     <div class="system-inline-modal-box" style="width: 320px; text-align: center;">
                         <h3 style="margin-bottom: 12px;">Operational Status</h3>
-                        <p style="margin-bottom: 16px; font-size: 11px; color: var(--text-body);">${message}</p>
-                        <button class="action-btn" onclick="closeSystemModalBox()">OK</button>
+                        <p style="margin-bottom: 16px; font-size: 14px; color: var(--text-body);">${message}</p>
+                        <button class="action-btn custom-modal-btn" onclick="closeSystemModalBox()">OK</button>
                     </div>
                 </div>
             `;
@@ -1427,10 +1427,10 @@
         <div class="system-inline-modal-overlay">
             <div class="system-inline-modal-box" style="width: 320px; text-align: center;">
                 <h3 style="margin-bottom: 12px;">Confirmation Prompt</h3>
-                <p style="margin-bottom: 16px; font-size: 11px; color: var(--text-body);">${message}</p>
+                <p style="margin-bottom: 16px; font-size: 14px; color: var(--text-body);">${message}</p>
                 <div style="display: flex; justify-content: center; gap: 8px;">
-                    <button class="action-btn" style="background: var(--danger);" onclick="closeSystemModalBox()">Cancel</button>
-                    <button class="action-btn" style="background: var(--success);" onclick="executeGlobalConfirm()">Confirm</button>
+                    <button class="action-btn custom-modal-btn" style="background: var(--danger);" onclick="closeSystemModalBox()">Cancel</button>
+                    <button class="action-btn custom-modal-btn" style="background: var(--success);" onclick="executeGlobalConfirm()">Confirm</button>
                 </div>
             </div>
         </div>
