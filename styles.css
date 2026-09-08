@@ -822,8 +822,15 @@ padding: 10px 16px !important;
             grid-template-columns: repeat(12, 1fr);
             gap: 16px;
             min-height: calc(100vh - 108px);
+            max-width: 100%;
+            width: 100%;
             align-items: stretch;
             align-content: stretch;
+        }
+
+        /* Grid cards must be allowed to shrink to the viewport width */
+        .grid-layout>* {
+            min-width: 0;
         }
 
         /* Combined Card & Sub-Card styling matching the Profile visual aesthetic */
@@ -842,6 +849,8 @@ padding: 10px 16px !important;
             display: flex;
             flex-direction: column;
             gap: 14px;
+            overflow-x: auto;
+            max-width: 100%;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
