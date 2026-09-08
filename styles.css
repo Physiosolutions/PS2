@@ -2490,7 +2490,7 @@ padding: 10px 16px !important;
                             }
                         }
 
-                        @media (max-width: 768px) {
+                        @media (max-width: 768px), (pointer: coarse) {
                             .sidebar {
                                 position: fixed !important;
                                 top: 0 !important;
@@ -2498,8 +2498,6 @@ padding: 10px 16px !important;
                                 bottom: 0 !important;
                                 width: 280px !important;
                                 max-width: 82vw !important;
-                                height: 100vh !important;
-                                height: 100dvh !important;
                                 z-index: 1050 !important;
                                 transform: translateX(-100%) !important;
                                 transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.25s ease !important;
@@ -3340,7 +3338,7 @@ padding: 10px 16px !important;
                         }
 
                         /* ===== DESKTOP HOVER-EXPAND SIDEBAR ===== */
-                        @media (min-width: 769px) {
+                        @media (min-width: 769px) and (hover: hover) {
                             .sidebar {
                                 width: 60px !important;
                             }

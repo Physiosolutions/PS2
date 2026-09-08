@@ -5519,7 +5519,7 @@
                         logoutLi.style.marginTop = 'auto';
                         logoutLi.innerHTML = `<span style="font-size:15px;width:22px;text-align:center;flex-shrink:0;">❌</span><span class="sidebar-item-text">Exit Operations Terminal</span>`;
                         logoutLi.onclick = function () {
-                            if (window.innerWidth <= 768 && typeof toggleSidebarLayout === 'function') {
+                            if (isMobileViewport() && typeof toggleSidebarLayout === 'function') {
                                 toggleSidebarLayout(false);
                             }
                             if (typeof terminateSession === 'function') terminateSession();
@@ -5557,7 +5557,7 @@
                     function triggerSelectedModuleShift(targetModuleId) {
                         if (targetModuleId === 'ot_attendance') targetModuleId = 'fdo_attendance';
                         globalActiveViewportModule = targetModuleId;
-                        if (window.innerWidth <= 768 && typeof toggleSidebarLayout === 'function') {
+                        if (isMobileViewport() && typeof toggleSidebarLayout === 'function') {
                             toggleSidebarLayout(false);
                         }
                         document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
@@ -8248,7 +8248,7 @@ ${extraInputsHtml}
                                 topNavLogoEl.innerHTML = '<span class="sidebar-brand-icon" style="width:36px;height:36px;min-width:36px;font-size:14px;display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:#fff;border-radius:6px;">PS</span>';
                             }
                             // Show topNavLogo on desktop (hover-expand default: sidebar at 60px)
-                            if (window.innerWidth > 768) {
+                            if (!isMobileViewport()) {
                                 topNavLogoEl.style.display = 'block';
                             }
                         }
@@ -17311,11 +17311,15 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     // ---------------------------------------------------------
                     // Sidebar Layout Toggle & Workspace Stretching Handler
                     // ---------------------------------------------------------
+                    function isMobileViewport() {
+                        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+                        return window.innerWidth <= 768;
+                    }
                     function toggleSidebarLayout(forceState) {
                         const sidebar = document.getElementById('sidebarContainerElement');
                         if (!sidebar) return;
                         const overlay = document.getElementById('sidebarOverlay');
-                        const isMobile = window.innerWidth <= 768;
+                        const isMobile = isMobileViewport();
 
                         if (isMobile) {
                             let isExpanded;
@@ -17353,7 +17357,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         }
 
     // Desktop with hover-expand: toggle button is hidden, skip collapse behavior
-    if (window.innerWidth > 768) return;
+    if (!isMobileViewport()) return;
     let isCollapsed;
     if (typeof forceState === 'boolean') {
         isCollapsed = !forceState;
@@ -17390,7 +17394,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const sidebar = document.getElementById('sidebarContainerElement');
                         const overlay = document.getElementById('sidebarOverlay');
                         if (!sidebar) return;
-                        if (window.innerWidth > 768) {
+                        if (!isMobileViewport()) {
                             sidebar.classList.remove('expanded');
                             sidebar.classList.remove('collapsed');
                             if (overlay) overlay.classList.remove('active');
@@ -17460,7 +17464,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 const deltaY = endY - startY;
 
                                 if (Math.abs(deltaY) > 75) return;
-                                if (window.innerWidth > 768) return;
+                                if (!isMobileViewport()) return;
 
                                 const isExpanded = sidebar && sidebar.classList.contains('expanded');
 
@@ -17557,13 +17561,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const sidebarEl = document.getElementById('sidebarContainerElement');
                         if (sidebarEl) {
                             sidebarEl.addEventListener('mouseenter', function () {
-                                if (window.innerWidth > 768) {
+                                if (!isMobileViewport()) {
                                     const logo = document.getElementById('topNavLogo');
                                     if (logo) logo.style.display = 'none';
                                 }
                             });
                             sidebarEl.addEventListener('mouseleave', function () {
-                                if (window.innerWidth > 768) {
+                                if (!isMobileViewport()) {
                                     const logo = document.getElementById('topNavLogo');
                                     if (logo) logo.style.display = 'block';
                                 }
