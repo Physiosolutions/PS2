@@ -257,11 +257,17 @@ padding: 10px 16px !important;
             margin-bottom: 4px;
         }
 
+        html {
+            overflow-x: hidden;
+        }
+
         body {
             background-color: var(--bg-main);
             color: var(--text-body);
             min-height: 100vh;
-            overflow: hidden;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            overflow-y: auto;
             position: relative;
             font-size: clamp(11px, 0.7vw, 13px);
         }
@@ -274,8 +280,9 @@ padding: 10px 16px !important;
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            width: 100vw;
+            min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
             background: var(--login-bg-img);
             background-size: cover;
             background-position: center;
@@ -569,7 +576,8 @@ padding: 10px 16px !important;
         .portal-container {
             display: flex;
             height: 100vh;
-            width: 100vw;
+            height: 100dvh;
+            width: 100%;
         }
 
         .sidebar {
@@ -585,6 +593,7 @@ padding: 10px 16px !important;
             border-right: 1px solid var(--border);
             transition: width 0.25s cubic-bezier(0.25, 0.8, 0.25, 1), padding 0.25s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s ease;
             height: 100vh;
+            height: 100dvh;
             overflow: hidden;
         }
 
@@ -782,6 +791,8 @@ padding: 10px 16px !important;
             display: flex;
             flex-direction: column;
             height: 100vh;
+            height: 100dvh;
+            max-width: 100%;
             overflow: hidden;
         }
 
@@ -801,6 +812,7 @@ padding: 10px 16px !important;
         .workspace {
             flex: 1;
             padding: 24px;
+            overflow-x: auto;
             overflow-y: auto;
             background-color: var(--bg-main);
         }
@@ -1191,8 +1203,9 @@ padding: 10px 16px !important;
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
+            width: 100%;
             height: 100vh;
+            height: 100dvh;
             background: rgba(15, 23, 42, 0.4);
             backdrop-filter: blur(4px);
             display: flex;
@@ -1670,8 +1683,9 @@ padding: 10px 16px !important;
    ========================================== */
         .login-wrapper-split {
             display: flex;
-            height: 100vh;
-            width: 100vw;
+            min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
             overflow: hidden;
             position: relative;
             background: var(--bg-main);
@@ -2630,7 +2644,7 @@ padding: 10px 16px !important;
                                 left: 0 !important;
                                 right: 0 !important;
                                 bottom: 0 !important;
-                                width: 100vw !important;
+                                width: 100% !important;
                                 height: 100vh !important;
                                 height: 100dvh !important;
                                 background: rgba(0, 0, 0, 0.55) !important;
@@ -2786,6 +2800,7 @@ padding: 10px 16px !important;
                             .login-split-right {
                                 width: 100% !important;
                                 max-width: 100% !important;
+                                overflow-y: auto !important;
                             }
 
                             .split-login-card {
@@ -4765,8 +4780,9 @@ padding: 10px 16px !important;
                             position: fixed;
                             top: 0;
                             left: 0;
-                            width: 100vw;
+                            width: 100%;
                             height: 100vh;
+                            height: 100dvh;
                             background: rgba(15, 23, 42, 0.5);
                             backdrop-filter: blur(4px);
                             display: none;
