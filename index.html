@@ -1699,7 +1699,7 @@
                                 <label id="lbl_audit_log_retention"
                                     data-trans-key="System Audit Log Retention Interval">System Audit Log Retention
                                     Interval</label>
-                                <select id="sysLogRetention" onchange="customAlert('Retention bounds updated.')">
+                                <select id="sysLogRetention" onchange="updateAuditLogRetention()">
                                     <option value="1" data-trans-key="Keep Audit Logs for 1 Day">Keep Audit Logs for 1
                                         Day</option>
                                     <option value="3" data-trans-key="Keep Audit Logs for 3 Days">Keep Audit Logs for 3
@@ -1763,6 +1763,13 @@
                                     style="justify-content:center; background:var(--success);"
                                     onclick="saveSchedulerConfigurations()" data-trans-key="💾 Save Schedule">💾 Save
                                     Schedule</button>
+                            </div>
+                            <div style="margin-top:8px;">
+                                <button class="action-btn" id="btn_send_report_now"
+                                    style="justify-content:center; background:var(--danger); width:100%;"
+                                    onclick="sendScheduledReportNow()"
+                                    data-trans-key="📤 Send Summary Now (Opens Mail App)">📤 Send Summary Now (Opens Mail
+                                    App)</button>
                             </div>
                         </div>
 

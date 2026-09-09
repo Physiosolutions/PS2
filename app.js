@@ -1676,6 +1676,42 @@
                         try { localStorage.setItem('physioGlobalLeaveRepository', JSON.stringify(globalLeaveRepository)); } catch (e) { }
                         if (typeof synchronizeWorkspaceCoreStatus === 'function') synchronizeWorkspaceCoreStatus();
                     };
+                    function persistRolePermissionsMatrix() {
+                        try { localStorage.setItem('physioRolePermissionsMatrix', JSON.stringify(globalRolePermissionsMatrix)); } catch (e) { }
+                    }
+                    function persistTextDictionary() {
+                        try { localStorage.setItem('physioSystemTextDictionary', JSON.stringify(systemTextDictionary)); } catch (e) { }
+                    }
+                    function persistReferenceRepository() {
+                        try { localStorage.setItem('physioReferenceRepository', JSON.stringify(referenceRepository)); } catch (e) { }
+                    }
+                    function rehydrateStaticStores() {
+                        try {
+                            const _matrixRaw = localStorage.getItem('physioRolePermissionsMatrix');
+                            if (_matrixRaw) {
+                                const _matrixParsed = JSON.parse(_matrixRaw);
+                                if (_matrixParsed && typeof _matrixParsed === 'object' && !Array.isArray(_matrixParsed) && _matrixParsed.Admin) {
+                                    globalRolePermissionsMatrix = Object.assign(globalRolePermissionsMatrix, _matrixParsed);
+                                }
+                            }
+                        } catch (e) { }
+                        try {
+                            const _dictRaw = localStorage.getItem('physioSystemTextDictionary');
+                            if (_dictRaw) {
+                                const _dictParsed = JSON.parse(_dictRaw);
+                                if (_dictParsed && typeof _dictParsed === 'object' && !Array.isArray(_dictParsed)) {
+                                    systemTextDictionary = Object.assign(systemTextDictionary, _dictParsed);
+                                }
+                            }
+                        } catch (e) { }
+                        try {
+                            const _refRaw = localStorage.getItem('physioReferenceRepository');
+                            if (_refRaw) {
+                                const _refParsed = JSON.parse(_refRaw);
+                                if (Array.isArray(_refParsed)) referenceRepository = _refParsed;
+                            }
+                        } catch (e) { }
+                    }
                     let staffProfileChangesetPipeline = [];
                     let systemAlertLogs = [];
                     let referenceSequences = { "P": 0, "A": 0, "M": 0 };
@@ -7024,19 +7060,39 @@
                     }
 
                     function executeDatabaseBackupSimulator() {
-                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
-                            repository: globalRosterRepository,
-                            leaves: globalLeaveRepository,
-                            dictionary: systemTextDictionary,
-                            permissions: globalRolePermissionsMatrix
-                        }));
+                        // Full snapshot: every module's localStorage store + live in-memory repositories
+                        const localStorageSnapshot = {};
+                        try {
+                            for (let i = 0; i < localStorage.length; i++) {
+                                const k = localStorage.key(i);
+                                if (!k) continue;
+                                const v = localStorage.getItem(k);
+                                if (v !== null) localStorageSnapshot[k] = v;
+                            }
+                        } catch (e) { }
+                        const payload = {
+                            version: 2,
+                            exportedAt: new Date().toISOString(),
+                            inMemory: {
+                                repository: globalRosterRepository,
+                                leaves: globalLeaveRepository,
+                                loginLogs: typeof globalLoginLogsRepository !== 'undefined' ? globalLoginLogsRepository : [],
+                                dictionary: systemTextDictionary,
+                                permissions: globalRolePermissionsMatrix,
+                                references: typeof referenceRepository !== 'undefined' ? referenceRepository : [],
+                                alerts: typeof systemAlertLogs !== 'undefined' ? systemAlertLogs : [],
+                                followups: typeof globalFollowupCasesRepository !== 'undefined' ? globalFollowupCasesRepository : []
+                            },
+                            localStorage: localStorageSnapshot
+                        };
+                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload));
                         const downloadAnchor = document.createElement('a');
                         downloadAnchor.setAttribute("href", dataStr);
                         downloadAnchor.setAttribute("download", "physio_operations_backup.json");
                         document.body.appendChild(downloadAnchor);
                         downloadAnchor.click();
                         downloadAnchor.remove();
-                        customAlert("Active system databases exported. Download sequence triggered.");
+                        customAlert("Full system database exported (all modules included). Download sequence triggered.");
                     }
 
                     function triggerRestorePointConfig() {
@@ -7049,14 +7105,45 @@
                             reader.onload = readerEvent => {
                                 try {
                                     const parsed = JSON.parse(readerEvent.target.result);
-                                    if (parsed.repository) globalRosterRepository = parsed.repository;
-                                    if (parsed.leaves) globalLeaveRepository = parsed.leaves;
-                                    if (parsed.dictionary) systemTextDictionary = parsed.dictionary;
-                                    if (parsed.permissions) globalRolePermissionsMatrix = parsed.permissions;
-                                    if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
-                                    if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
-                                    synchronizeWorkspaceCoreStatus();
-                                    customAlert("Operations backup restored.");
+                                    let restoredKeys = 0;
+                                    if (parsed.version === 2) {
+                                        // v2: full system restore
+                                        if (parsed.inMemory) {
+                                            if (Array.isArray(parsed.inMemory.repository)) globalRosterRepository = parsed.inMemory.repository;
+                                            if (Array.isArray(parsed.inMemory.leaves)) globalLeaveRepository = parsed.inMemory.leaves;
+                                            if (parsed.inMemory.dictionary && typeof parsed.inMemory.dictionary === 'object') systemTextDictionary = parsed.inMemory.dictionary;
+                                            if (parsed.inMemory.permissions && typeof parsed.inMemory.permissions === 'object') globalRolePermissionsMatrix = parsed.inMemory.permissions;
+                                            if (Array.isArray(parsed.inMemory.loginLogs)) globalLoginLogsRepository = parsed.inMemory.loginLogs;
+                                            if (Array.isArray(parsed.inMemory.references)) referenceRepository = parsed.inMemory.references;
+                                            if (Array.isArray(parsed.inMemory.alerts)) systemAlertLogs = parsed.inMemory.alerts;
+                                            if (Array.isArray(parsed.inMemory.followups)) globalFollowupCasesRepository = parsed.inMemory.followups;
+                                        }
+                                        if (parsed.localStorage && typeof parsed.localStorage === 'object') {
+                                            for (const k in parsed.localStorage) {
+                                                try { localStorage.setItem(k, parsed.localStorage[k]); restoredKeys++; } catch (e) { }
+                                            }
+                                        }
+                                        if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
+                                        if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
+                                        persistRolePermissionsMatrix();
+                                        persistTextDictionary();
+                                        persistReferenceRepository();
+                                        synchronizeWorkspaceCoreStatus();
+                                        customAlert(`Full system backup restored (${restoredKeys} storage keys). Reloading workspace...`);
+                                    } else {
+                                        // v1: legacy backup format
+                                        if (parsed.repository) globalRosterRepository = parsed.repository;
+                                        if (parsed.leaves) globalLeaveRepository = parsed.leaves;
+                                        if (parsed.dictionary) systemTextDictionary = parsed.dictionary;
+                                        if (parsed.permissions) globalRolePermissionsMatrix = parsed.permissions;
+                                        if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
+                                        if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
+                                        persistRolePermissionsMatrix();
+                                        persistTextDictionary();
+                                        synchronizeWorkspaceCoreStatus();
+                                        customAlert("Legacy (v1) backup restored.");
+                                    }
+                                    setTimeout(() => location.reload(), 1600);
                                 } catch (err) {
                                     customAlert("Invalid JSON schema structure. Restoring failed.");
                                 }
@@ -7081,6 +7168,45 @@
                         const period = freq === 'daily' ? 'Today' : freq === 'weekly' ? 'Past 7 days' : 'Past 30 days';
                         const now = new Date();
                         const dateStr = now.toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' });
+                        const stats = buildRealReportStats();
+
+                        // Real compliance expiry rows from physioPersonalExpiry
+                        let expiryRows = `<tr><td colspan="5" style="padding:4px 6px; text-align:center; color:var(--text-muted); font-style:italic;">No compliance documents expiring</td></tr>`;
+                        try {
+                            const rawE = localStorage.getItem('physioPersonalExpiry');
+                            if (rawE) {
+                                const arrE = JSON.parse(rawE);
+                                if (Array.isArray(arrE) && arrE.length) {
+                                    const nowE = Date.now();
+                                    const soon = arrE
+                                        .map(d => ({ exp: new Date(d && (d.expiryDate || d.expires || d.date)), name: d && (d.staffName || d.name || '—'), doc: d && (d.document || d.label || 'Document'), cat: d && (d.category || '—') }))
+                                        .filter(d => !isNaN(d.exp.getTime()))
+                                        .sort((a, b) => a.exp - b.exp)
+                                        .slice(0, 8);
+                                    if (soon.length) {
+                                        expiryRows = soon.map(d => {
+                                            const daysLeft = Math.max(0, Math.ceil((d.exp.getTime() - nowE) / 86400000));
+                                            const color = daysLeft <= 15 ? 'var(--danger)' : daysLeft <= 45 ? 'var(--warning)' : 'var(--success)';
+                                            return `<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.name}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.doc}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.cat}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.exp.toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' })}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:${color};">${daysLeft} days</span></td></tr>`;
+                                        }).join('');
+                                    }
+                                }
+                            }
+                        } catch (e) { }
+
+                        // Real billing counts from module stores
+                        let billingRows = `<tr><td colspan="4" style="padding:4px 6px; text-align:center; color:var(--text-muted); font-style:italic;">No billing data</td></tr>`;
+                        try {
+                            const rows = [];
+                            const aas = JSON.parse(localStorage.getItem('physioAasandhaData') || '[]');
+                            const sol = JSON.parse(localStorage.getItem('physioSolarelleData') || '[]');
+                            const sea = JSON.parse(localStorage.getItem('physioSealesData') || '[]');
+                            const count = x => Array.isArray(x) ? x.length : (x && typeof x === 'object') ? Object.keys(x).length : 0;
+                            rows.push(`<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Aasandha Assessments</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${count(aas)}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td></tr>`);
+                            rows.push(`<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Solarelle Patients</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${count(sol)}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td></tr>`);
+                            rows.push(`<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">SEALES Sales</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${count(sea)}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">—</td></tr>`);
+                            billingRows = rows.join('');
+                        } catch (e) { }
 
                         const reportHTML = `
                 <div style="padding:20px; max-height:80vh; overflow-y:auto;">
@@ -7094,19 +7220,19 @@
 
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; margin-bottom:18px;">
                         <div style="background:var(--bg-card); border-radius:8px; padding:10px; text-align:center; border:1px solid var(--border);">
-                            <div style="font-size:20px; font-weight:700; color:var(--primary);">${Math.floor(Math.random() * 5) + 1}</div>
-                            <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">New Staff</div>
+                            <div style="font-size:20px; font-weight:700; color:var(--primary);">${stats.staffCount}</div>
+                            <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Total Staff</div>
                         </div>
                         <div style="background:var(--bg-card); border-radius:8px; padding:10px; text-align:center; border:1px solid var(--border);">
-                            <div style="font-size:20px; font-weight:700; color:var(--success);">${Math.floor(Math.random() * 8) + 2}</div>
+                            <div style="font-size:20px; font-weight:700; color:var(--success);">${stats.leaveRequests}</div>
                             <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Leave Requests</div>
                         </div>
                         <div style="background:var(--bg-card); border-radius:8px; padding:10px; text-align:center; border:1px solid var(--border);">
-                            <div style="font-size:20px; font-weight:700; color:var(--danger);">${Math.floor(Math.random() * 3) + 1}</div>
+                            <div style="font-size:20px; font-weight:700; color:var(--danger);">${stats.expiringSoon}</div>
                             <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Expiring Soon</div>
                         </div>
                         <div style="background:var(--bg-card); border-radius:8px; padding:10px; text-align:center; border:1px solid var(--border);">
-                            <div style="font-size:20px; font-weight:700; color:var(--warning);">${Math.floor(Math.random() * 4) + 1}</div>
+                            <div style="font-size:20px; font-weight:700; color:var(--warning);">${stats.discharges}</div>
                             <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Discharges</div>
                         </div>
                     </div>
@@ -7179,15 +7305,15 @@
                         <div style="font-size:12px; font-weight:600; color:var(--text-body); margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid var(--border);">⏱ Overtime Summary (${period})</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:8px;">
                             <div style="background:var(--bg-card); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border);">
-                                <div style="font-size:14px; font-weight:700; color:var(--primary);">${Math.floor(Math.random() * 20) + 15}h</div>
+                                <div style="font-size:14px; font-weight:700; color:var(--primary);">0h</div>
                                 <div style="font-size:9px; color:var(--text-muted);">Total OT Hours</div>
                             </div>
                             <div style="background:var(--bg-card); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border);">
-                                <div style="font-size:14px; font-weight:700; color:var(--warning);">${Math.floor(Math.random() * 3) + 1}</div>
+                                <div style="font-size:14px; font-weight:700; color:var(--warning);">0</div>
                                 <div style="font-size:9px; color:var(--text-muted);">Staff with OT</div>
                             </div>
                             <div style="background:var(--bg-card); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border);">
-                                <div style="font-size:14px; font-weight:700; color:var(--danger);">${Math.floor(Math.random() * 5) + 2}</div>
+                                <div style="font-size:14px; font-weight:700; color:var(--danger);">0</div>
                                 <div style="font-size:9px; color:var(--text-muted);">Pending Approval</div>
                             </div>
                         </div>
@@ -7339,9 +7465,7 @@
                                 <th style="padding:5px 6px; text-align:left; border-bottom:1px solid var(--border);">Days Left</th>
                             </tr></thead>
                             <tbody>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Ibrahim Manik</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Work Permit</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Visa</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Jul 10 2026</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:var(--danger);">13 days</span></td></tr>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Mariyam Sama</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Passport</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Personal</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Aug 05 2026</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:var(--warning);">39 days</span></td></tr>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Fathimath Hana</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">License</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Professional</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Sep 01 2026</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:var(--success);">66 days</span></td></tr>
+                                ${expiryRows}
                             </tbody>
                         </table>
                     </div>
@@ -7356,9 +7480,7 @@
                                 <th style="padding:5px 6px; text-align:left; border-bottom:1px solid var(--border);">Pending</th>
                             </tr></thead>
                             <tbody>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Aasandha Assessments</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">12</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">3,450.00</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">2</td></tr>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">Solarelle Patients</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">8</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">1,920.00</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">1</td></tr>
-                                <tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">SEALES Sales</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">5</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">890.00</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">0</td></tr>
+                                ${billingRows}
                             </tbody>
                         </table>
                     </div>
@@ -7385,11 +7507,200 @@
                         const freq = document.getElementById('schedReportFrequency')?.value || 'weekly';
                         const time = document.getElementById('schedReportTime')?.value || '08:00';
                         const day = document.getElementById('schedReportDay')?.value || '0';
+                        const retention = parseInt(document.getElementById('sysLogRetention')?.value || '30', 10) || 30;
                         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
                         const dayLabel = days[parseInt(day)];
                         const freqLabel = freq.charAt(0).toUpperCase() + freq.slice(1);
+                        if (!email || !email.includes('@')) {
+                            customAlert("⚠️ Please enter a valid recipient email address before saving the schedule.");
+                            return;
+                        }
                         const scheduleStr = freq === 'daily' ? `Daily at ${time}` : freq === 'weekly' ? `Weekly on ${dayLabel} at ${time}` : `Monthly on 1st at ${time}`;
-                        customAlert(`✅ Report scheduled!\n\n📧 ${email}\n📅 ${scheduleStr}\n\nNext dispatch will include: staff registrations, leave balances, and login audit summary.`);
+                        const config = {
+                            email: email,
+                            frequency: freq,
+                            time: time,
+                            day: day,
+                            retentionDays: retention,
+                            updatedAt: new Date().toISOString()
+                        };
+                        try { localStorage.setItem('physioSchedulerConfig', JSON.stringify(config)); } catch (e) { }
+                        customAlert(`✅ Report schedule saved & stored locally!\n\n📧 ${email}\n📅 ${scheduleStr}\n🕐 Next dispatch window: every ${retention} day(s)\n\nBecause this is a client-side system, dispatch opens your mail app (mailto:) — it will not auto-send until connected to a backend email service.`);
+                    }
+
+                    function getRetentionIntervalSeconds() {
+                        const raw = localStorage.getItem('physioSchedulerConfig');
+                        let retentionDays = 7;
+                        try {
+                            if (raw) {
+                                const c = JSON.parse(raw);
+                                if (c && typeof c.retentionDays === 'number' && c.retentionDays > 0) retentionDays = c.retentionDays;
+                            } else {
+                                const sel = document.getElementById('sysLogRetention');
+                                if (sel) {
+                                    const v = parseInt(sel.value, 10);
+                                    if (!isNaN(v) && v > 0) retentionDays = v;
+                                }
+                            }
+                        } catch (e) { }
+                        return Math.max(1, retentionDays) * 86400;
+                    }
+
+                    function maybeDispatchScheduledReport() {
+                        try {
+                            const raw = localStorage.getItem('physioSchedulerConfig');
+                            if (!raw) return;
+                            const cfg = JSON.parse(raw);
+                            if (!cfg || !cfg.email) return;
+                            const now = new Date();
+                            const key = now.toISOString().slice(0, 10);
+                            const markersRaw = localStorage.getItem('physioSchedulerLastDispatch');
+                            const markers = markersRaw ? JSON.parse(markersRaw) : {};
+                            if (!markers[key]) {
+                                const [splitH, splitMin] = (cfg.time || '08:00').split(':').map(Number);
+                                const targetMinutes = (splitH || 8) * 60 + (splitMin || 0);
+                                const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                                const retentionDays = getRetentionIntervalSeconds() / 86400;
+                                const lastDispatch = markers.__last ? new Date(markers.__last).getTime() : 0;
+                                if (nowMinutes >= targetMinutes && now.getTime() - lastDispatch >= retentionDays * 86400000) {
+                                    if (sendScheduledReportNow('auto')) {
+                                        markers[key] = true;
+                                        markers.__last = now.toISOString();
+                                        localStorage.setItem('physioSchedulerLastDispatch', JSON.stringify(markers));
+                                    }
+                                }
+                            }
+                        } catch (e) { }
+                    }
+
+                    function sendScheduledReportNow(mode) {
+                        const email = document.getElementById('schedReportEmail')?.value?.trim();
+                        const raw = localStorage.getItem('physioSchedulerConfig');
+                        let cfgEmail = email;
+                        try {
+                            if (raw) {
+                                const c = JSON.parse(raw);
+                                if (c && c.email) cfgEmail = c.email;
+                            }
+                        } catch (e) { }
+                        if (!cfgEmail || !cfgEmail.includes('@')) {
+                            customAlert("⚠️ No valid recipient email configured. Save the schedule first.");
+                            return false;
+                        }
+                        const stats = buildRealReportStats();
+                        const subject = encodeURIComponent(`Physio Solutions Automated Summary Report — ${new Date().toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' })}`);
+                        const body = encodeURIComponent(
+                            "PHYSIO SOLUTIONS — AUTOMATED SUMMARY REPORT\n" +
+                            "=============================================\n" +
+                            `Generated: ${new Date().toLocaleString('en-MV')}\n` +
+                            `Audit Log Retention Interval: ${getRetentionIntervalSeconds() / 86400} day(s)\n\n` +
+                            `Total Staff: ${stats.staffCount}\n` +
+                            `Leave Requests: ${stats.leaveRequests}\n` +
+                            `Expiring Soon (30 days): ${stats.expiringSoon}\n` +
+                            `Discharges: ${stats.discharges}\n` +
+                            `Successful Logins: ${stats.successLogins}\n` +
+                            `Failed Logins: ${stats.failedLogins}\n\n` +
+                            "NOTE: This report is delivered via your local mail client (mailto:). " +
+                            "For true automated email delivery, connect the scheduler to a backend email service."
+                        );
+                        const mailto = `mailto:${cfgEmail}?subject=${subject}&body=${body}`;
+                        window.open(mailto, '_self');
+                        if (mode === 'auto') {
+                            customAlert("📤 Scheduled summary dispatched to your mail client for the configured recipient.");
+                        } else if (mode !== 'silent') {
+                            customAlert(`📤 Summary report prepared for ${cfgEmail} — your mail client has been opened.`);
+                        }
+                        return true;
+                    }
+
+                    function buildRealReportStats() {
+                        const stats = {
+                            staffCount: 0,
+                            leaveRequests: 0,
+                            expiringSoon: 0,
+                            discharges: 0,
+                            successLogins: 0,
+                            failedLogins: 0
+                        };
+                        try {
+                            stats.staffCount = (typeof globalRosterRepository !== 'undefined' && Array.isArray(globalRosterRepository)) ? globalRosterRepository.length : 0;
+                        } catch (e) { }
+                        try {
+                            stats.leaveRequests = (typeof globalLeaveRepository !== 'undefined' && Array.isArray(globalLeaveRepository)) ? globalLeaveRepository.length : 0;
+                        } catch (e) { }
+                        try {
+                            if (typeof globalLoginLogsRepository !== 'undefined' && Array.isArray(globalLoginLogsRepository)) {
+                                stats.successLogins = globalLoginLogsRepository.filter(l => l && l.status === 'success').length;
+                                stats.failedLogins = globalLoginLogsRepository.filter(l => l && l.status === 'failed').length;
+                            }
+                        } catch (e) { }
+                        try {
+                            const raw = localStorage.getItem('physioPersonalExpiry');
+                            if (raw) {
+                                const arr = JSON.parse(raw);
+                                if (Array.isArray(arr)) {
+                                    const now = Date.now();
+                                    const in30 = now + 30 * 86400000;
+                                    stats.expiringSoon = arr.filter(d => {
+                                        const exp = new Date(d && (d.expiryDate || d.expires || d.date));
+                                        return !isNaN(exp.getTime()) && exp.getTime() >= now && exp.getTime() <= in30;
+                                    }).length;
+                                }
+                            }
+                        } catch (e) { }
+                        try {
+                            const raw = localStorage.getItem('physioDischargeRecords');
+                            if (raw) {
+                                const arr = JSON.parse(raw);
+                                if (Array.isArray(arr)) stats.discharges = arr.length;
+                            }
+                        } catch (e) { }
+                        return stats;
+                    }
+
+                    function loadSchedulerConfig() {
+                        try {
+                            const raw = localStorage.getItem('physioSchedulerConfig');
+                            if (!raw) return;
+                            const cfg = JSON.parse(raw);
+                            const emailInput = document.getElementById('schedReportEmail');
+                            const freqSel = document.getElementById('schedReportFrequency');
+                            const timeInput = document.getElementById('schedReportTime');
+                            const daySel = document.getElementById('schedReportDay');
+                            const retentionSel = document.getElementById('sysLogRetention');
+                            if (cfg.email && emailInput) emailInput.value = cfg.email;
+                            if (cfg.frequency && freqSel) freqSel.value = cfg.frequency;
+                            if (cfg.day && daySel) daySel.value = cfg.day;
+                            if (timeInput) {
+                                if (cfg.time && timeInput.type === 'time') timeInput.value = cfg.time;
+                            }
+                            if (retentionSel && typeof cfg.retentionDays === 'number') {
+                                const opts = Array.from(retentionSel.options).map(o => parseInt(o.value, 10));
+                                if (opts.includes(cfg.retentionDays)) retentionSel.value = String(cfg.retentionDays);
+                            }
+                            if (typeof toggleSchedDaySelector === 'function') toggleSchedDaySelector();
+                        } catch (e) { }
+                    }
+
+                    function startSchedulerTick() {
+                        maybeDispatchScheduledReport();
+                        setInterval(maybeDispatchScheduledReport, 60000);
+                    }
+
+                    function updateAuditLogRetention() {
+                        const sel = document.getElementById('sysLogRetention');
+                        if (!sel) return;
+                        const days = parseInt(sel.value, 10) || 30;
+                        try {
+                            const raw = localStorage.getItem('physioSchedulerConfig');
+                            if (raw) {
+                                const cfg = JSON.parse(raw);
+                                cfg.retentionDays = days;
+                                cfg.updatedAt = new Date().toISOString();
+                                localStorage.setItem('physioSchedulerConfig', JSON.stringify(cfg));
+                            }
+                        } catch (e) { }
+                        customAlert(`✅ System Audit Log retention bounds updated to ${days} day(s).\n\nAutomated summary dispatch window is now every ${days} day(s).`);
                     }
 
                     function renderAdminApprovalsQueue() {
@@ -17528,6 +17839,19 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         // 2. Start the live clock ticks
                         updateDashboardLiveClock();
                         setInterval(updateDashboardLiveClock, 1000);
+
+                        // 2.5 Rehydrate persisted static stores + start scheduler machinery
+                        rehydrateStaticStores();
+                        persistRolePermissionsMatrix();
+                        persistTextDictionary();
+                        persistReferenceRepository();
+                        loadSchedulerConfig();
+                        startSchedulerTick();
+                        window.addEventListener('beforeunload', function () {
+                            persistRolePermissionsMatrix();
+                            persistTextDictionary();
+                            persistReferenceRepository();
+                        });
 
                         // 3. Enforce spellcheck settings
                         enforceGlobalSpellcheck();
