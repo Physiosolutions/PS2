@@ -7053,6 +7053,8 @@
                                     if (parsed.leaves) globalLeaveRepository = parsed.leaves;
                                     if (parsed.dictionary) systemTextDictionary = parsed.dictionary;
                                     if (parsed.permissions) globalRolePermissionsMatrix = parsed.permissions;
+                                    if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
+                                    if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
                                     synchronizeWorkspaceCoreStatus();
                                     customAlert("Operations backup restored.");
                                 } catch (err) {
