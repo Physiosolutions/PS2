@@ -943,13 +943,65 @@
 
         // 9. LEAVE RECORDS
         leave_records: function (rows, mode) {
-            let updated = 0, added = 0;
+            let updated = 0, added = 0, createdStaff = 0;
             const store = (typeof window.__globalLeaveStoreGet === 'function')
                 ? window.__globalLeaveStoreGet()
                 : (window.globalLeaveRepository = Array.isArray(window.globalLeaveRepository) ? window.globalLeaveRepository : []);
+            const roster = (typeof window.__globalRosterStoreGet === 'function')
+                ? window.__globalRosterStoreGet()
+                : (window.globalRosterRepository = Array.isArray(window.globalRosterRepository) ? window.globalRosterRepository : []);
 
             if (mode === "replace") {
                 store.length = 0;
+            }
+
+            // Map a leave type to the balance field it consumes (mirrors the in-app deductions)
+            function balanceKeyForType(lt) {
+                const t = String(lt).toLowerCase();
+                if (t === 'sick leave') return 'sickBalance';
+                if (t === 'annual leave') return 'annualBalance';
+                if (t === 'family leave' || t === 'family responsibility leave') return 'familyBalance';
+                if (t === 'umrah leave') return 'umrahBalance';
+                if (t === 'hajj leave') return 'hajjBalance';
+                if (t === 'no paid leave') return 'noPaidBalance';
+                if (t === 'maternity leave') return 'maternityBalance';
+                if (t === 'paternity leave') return 'paternityBalance';
+                if (t === 'special leave') return 'specialBalance';
+                return null;
+            }
+
+            // Find an existing staff member, or auto-create a minimal profile so imports link to the staff portal
+            function ensureRosterStaff(name, email) {
+                if (!roster) return null;
+                const lower = String(email || '').toLowerCase();
+                let user = roster.find(u => u.email && u.email.toLowerCase() === lower);
+                if (user) return user;
+                const today = new Date().toISOString().split('T')[0];
+                const username = lower ? lower.split('@')[0] : String(name).toLowerCase().replace(/\s+/g, '.');
+                const initials = String(name).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'ST';
+                user = {
+                    name: String(name), username: username, email: lower || (username + '@physio.mv'),
+                    position: 'Physiotherapist', department: 'Physiotherapy Department', style: 'Full-Time',
+                    avatar: initials, password: 'Password123!', dob: '', idCard: '', idCardExpiry: '',
+                    healthLicence: '', healthLicenceExpiry: '', phone: '', emergencyContact: '',
+                    visaExpiry: '', passportExpiry: '', accentColor: '#004b87', hireDate: today,
+                    sickBalance: 30, annualBalance: 30, familyBalance: 15, umrahBalance: 15,
+                    hajjBalance: 15, noPaidBalance: 15, maternityBalance: 90, paternityBalance: 10,
+                    specialBalance: 15, lastLeaveReset: today, photoUrl: '', extraFieldsData: {},
+                    joiningDate: today, contractExpiryDate: '', lastDayOfWorking: '',
+                    quotaActive: false, quotaNumber: '', quotaExpiry: ''
+                };
+                roster.push(user);
+                createdStaff++;
+                return user;
+            }
+
+            // Deduct approved leave days from a staff member's balance (mirrors the in-app logic)
+            function deductBalanceFor(user, type, duration) {
+                const key = balanceKeyForType(type);
+                if (user && key) {
+                    user[key] = Math.max(0, (user[key] || 0) - duration);
+                }
             }
 
             rows.forEach(item => {
@@ -998,11 +1050,20 @@
                         approvedBy: "Universal Importer"
                     });
                     added++;
+                    if (email) {
+                        const rosterUser = ensureRosterStaff(employee, email);
+                        if (String(status).toLowerCase() === 'approved') {
+                            deductBalanceFor(rosterUser, type, duration);
+                        }
+                    }
                 }
             });
 
             if (typeof window.__saveLeaveRepository === 'function') {
                 window.__saveLeaveRepository();
+            }
+            if (createdStaff > 0 && typeof window.__saveRosterStore === 'function') {
+                window.__saveRosterStore();
             }
             try {
                 localStorage.setItem('physioGlobalLeaveRepository', JSON.stringify(store));
@@ -1016,7 +1077,7 @@
                 if (wdTab && wdTab.style.display !== 'none') { populateWdFilters(); renderWorkingDaysDashboard(); }
             }
 
-            return { updated, added, total: store.length };
+            return { updated, added, createdStaff: createdStaff, total: store.length };
         },
 
         // 10. DOCUMENT REFERENCE GENERATOR (SEQUENTIAL ID)
@@ -1665,10 +1726,12 @@
                     btn.innerHTML = '≡ƒÜÇ Execute Import & Combine Data';
                 }
 
-                const msg = `≡ƒÄë Import Complete for ${schema.name}!\n\n` +
-                    `ΓÇó Records Updated (Merged): ${result.updated}\n` +
-                    `ΓÇó New Records Added: ${result.added}\n` +
-                    `ΓÇó Total Module Records: ${result.total}\n\n` +
+                const msg = `🎉 Import Complete for ${schema.name}!\n\n` +
+                    `• Records Updated (Merged): ${result.updated}\n` +
+                    `• New Records Added: ${result.added}\n` +
+                    `• Total Module Records: ${result.total}\n` +
+                    (result.createdStaff ? `• Staff Auto-Created: ${result.createdStaff}\n` : '') +
+                    `\n` +
                     `Data successfully verified and saved to system persistence.`;
 
                 if (typeof customAlert === 'function') {

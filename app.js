@@ -1651,6 +1651,17 @@
                     let stagedActiveStatusChanges = {};
 
                     let globalRosterRepository = [];
+                    try {
+                        const _rosterRaw = localStorage.getItem('physioStaffDirectoryRepository');
+                        if (_rosterRaw) {
+                            const _rosterParsed = JSON.parse(_rosterRaw);
+                            if (Array.isArray(_rosterParsed)) globalRosterRepository = _rosterParsed;
+                        }
+                    } catch (e) { }
+                    window.__globalRosterStoreGet = function () { return globalRosterRepository; };
+                    window.__saveRosterStore = function () {
+                        try { localStorage.setItem('physioStaffDirectoryRepository', JSON.stringify(globalRosterRepository)); } catch (e) { }
+                    };
                     let globalLoginLogsRepository = [];
                     let globalLeaveRepository = [];
                     try {
