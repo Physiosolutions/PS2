@@ -5174,3 +5174,81 @@ padding: 10px 16px !important;
     font-weight: 700;
     white-space: nowrap;
 }
+
+/* ========================================================
+   MOBILE POLISH 2026 — comfortable tap sizes, clean shapes
+   Last block: wins over the legacy responsive shrink rules.
+   ======================================================== */
+@media (max-width: 768px), (pointer: coarse) {
+
+    /* Buttons: readable size, no clipping/overlap, consistent shape */
+    button:not(#sidebarToggleBtn):not(.sidebar-toggle-btn):not(.sidebar-close-btn-mobile):not(#lbl_auth_btn_l):not(.google-btn):not(.split-login-btn):not(.split-google-btn):not(.custom-modal-btn):not(.theme-toggle),
+    .action-btn:not(#lbl_auth_btn_l):not(.custom-modal-btn) {
+        min-height: 40px !important;
+        padding: 9px 14px !important;
+        font-size: 12px !important;
+        line-height: 1.25 !important;
+        border-radius: 8px !important;
+        white-space: normal !important;
+    }
+
+    /* Inputs / selects: comfortable fields (login pages keep their own) */
+    input:not(.login-card input):not(.split-login-card input):not(.portal-switcher-select),
+    select:not(.login-card select):not(.split-login-card select):not(.portal-switcher-select),
+    textarea:not(.login-card textarea):not(.split-login-card textarea) {
+        font-size: 14px !important;
+        min-height: 40px !important;
+        padding: 9px 10px !important;
+        border-radius: 8px !important;
+    }
+    textarea:not(.login-card textarea):not(.split-login-card textarea) {
+        min-height: 64px !important;
+    }
+
+    /* Labels & headings: readable */
+    .form-group label:not(.login-card label):not(.split-login-card label) {
+        font-size: 11px !important;
+        letter-spacing: 0.3px !important;
+        margin-bottom: 6px !important;
+    }
+    h2 {
+        font-size: 15px !important;
+    }
+    h3 {
+        font-size: 13px !important;
+    }
+
+    /* Tables: readable cells */
+    table th,
+    table td {
+        font-size: 11px !important;
+        padding: 7px 8px !important;
+    }
+
+    /* Top bar: never let items collide on narrow phones */
+    .top-nav {
+        padding: 0 6px !important;
+    }
+    .top-nav>div {
+        min-width: 0;
+    }
+    .top-nav>div:last-child {
+        gap: 6px !important;
+    }
+    #currentModuleTitle {
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
+        max-width: 40vw !important;
+    }
+    #adminPortalSwitcher {
+        flex-shrink: 1;
+    }
+    .portal-switcher-select {
+        min-width: 0 !important;
+    }
+
+    /* Card action rows: allow wrapping instead of overlapping */
+    .module-card>div[style*="display:flex"] {
+        flex-wrap: wrap !important;
+    }
+}
