@@ -1653,6 +1653,18 @@
                     let globalRosterRepository = [];
                     let globalLoginLogsRepository = [];
                     let globalLeaveRepository = [];
+                    try {
+                        const _importedRaw = localStorage.getItem('physioGlobalLeaveRepository');
+                        if (_importedRaw) {
+                            const _importedParsed = JSON.parse(_importedRaw);
+                            if (Array.isArray(_importedParsed)) globalLeaveRepository = _importedParsed;
+                        }
+                    } catch (e) { }
+                    window.__globalLeaveStoreGet = function () { return globalLeaveRepository; };
+                    window.__saveLeaveRepository = function () {
+                        try { localStorage.setItem('physioGlobalLeaveRepository', JSON.stringify(globalLeaveRepository)); } catch (e) { }
+                        if (typeof synchronizeWorkspaceCoreStatus === 'function') synchronizeWorkspaceCoreStatus();
+                    };
                     let staffProfileChangesetPipeline = [];
                     let systemAlertLogs = [];
                     let referenceSequences = { "P": 0, "A": 0, "M": 0 };
