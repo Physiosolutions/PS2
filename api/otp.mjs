@@ -45,6 +45,21 @@ function json(res, status, data) {
   return res.end(JSON.stringify(data));
 }
 
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    if (req.body) {
+      return resolve(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body));
+    }
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 1e6) req.destroy(new Error('Body too large'));
+    });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
 async function sendOtpEmail(to, otp) {
   return fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -73,7 +88,8 @@ export default async function handler(req, res) {
 
   let payload;
   try {
-    payload = JSON.parse(req.body || '{}');
+    const raw = await readRequestBody(req);
+    payload = JSON.parse(raw || '{}');
   } catch (e) {
     return json(res, 400, { ok: false, error: 'Invalid JSON body' });
   }
