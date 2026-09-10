@@ -8389,7 +8389,7 @@
                       <button class="staff-card-expand-btn" onclick="toggleStaffCardExpand('${staff.email}')">▼ More</button>
                       </div>
                   </div>
-                    <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                    <div style="border-top:1px solid var(--border); padding-top:8px; margin-top:0; display:flex; flex-direction:column; gap:6px;">
                         ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
                         ${currentActiveSessionUser.email === staff.email || allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
