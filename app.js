@@ -5355,9 +5355,11 @@
                     }
 
                     function executeRecoveryStepTwoSubmit(email) {
+                        if (typeof email !== 'string' || !email) email = globalRecoveryFlow ? globalRecoveryFlow.email : '';
+                        email = email.toLowerCase();
                         const otp = document.getElementById('recoveryOtpField').value.trim();
                         if (!/^\d{6}$/.test(otp)) { customAlert("Please enter the 6-digit code from your email."); return; }
-                        if (!globalRecoveryFlow || globalRecoveryFlow.email !== email.toLowerCase()) {
+                        if (!globalRecoveryFlow || globalRecoveryFlow.email !== email) {
                             customAlert("Recovery session missing. Please restart the recovery sequence.");
                             renderForgotPasswordFormStepOne();
                             return;
