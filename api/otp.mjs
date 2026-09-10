@@ -48,7 +48,10 @@ function json(res, status, data) {
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
     if (req.body) {
-      return resolve(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body));
+      if (Buffer.isBuffer(req.body)) return resolve(req.body.toString('utf8'));
+      // Vercel may hand us an already-parsed object
+      if (typeof req.body === 'object') return resolve(req.body);
+      return resolve(String(req.body));
     }
     let data = '';
     req.on('data', (chunk) => {
@@ -89,7 +92,7 @@ export default async function handler(req, res) {
   let payload;
   try {
     const raw = await readRequestBody(req);
-    payload = JSON.parse(raw || '{}');
+    payload = (raw && typeof raw === 'object') ? raw : JSON.parse(raw || '{}');
   } catch (e) {
     return json(res, 400, { ok: false, error: 'Invalid JSON body' });
   }
