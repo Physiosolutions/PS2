@@ -8386,10 +8386,8 @@
 
                              ${extraFieldsHtml}
 </div>
+                      <button class="staff-card-expand-btn" onclick="toggleStaffCardExpand('${staff.email}')">▼ More</button>
                       </div>
-                     <div style="text-align:center; padding:2px 0;">
-                        <button class="staff-card-expand-btn" onclick="toggleStaffCardExpand('${staff.email}')">▼ Show More</button>
-                     </div>
                   </div>
                     <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
                         ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
@@ -8405,7 +8403,7 @@
                                     expandBtn.style.display = 'none';
                                 } else if (expandedStaffCardMap[staff.email]) {
                                     card.classList.add('expanded');
-                                    expandBtn.innerHTML = '▲ Show Less';
+                                    expandBtn.innerHTML = '▲ Less';
                                 }
                             }
                         });
@@ -8420,7 +8418,7 @@
                         expandedStaffCardMap[email] = isExpanded;
                         try { localStorage.setItem('physioExpandedStaffCards', JSON.stringify(expandedStaffCardMap)); } catch (e) { }
                         const btn = card.querySelector('.staff-card-expand-btn');
-                        if (btn) btn.innerHTML = isExpanded ? '▲ Show Less' : '▼ Show More';
+                        if (btn) btn.innerHTML = isExpanded ? '▲ Less' : '▼ More';
                     }
 
                     function toggleStaffActiveStatus(email, isActive) {

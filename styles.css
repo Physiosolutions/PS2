@@ -1439,17 +1439,22 @@ padding: 10px 16px !important;
         }
 
         .staff-card-expand-btn {
-            background: var(--bg-inner);
+            position: absolute;
+            bottom: 6px;
+            right: 8px;
+            z-index: 1;
+            background: var(--bg-card);
             border: 1px solid var(--border);
             color: var(--primary);
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             cursor: pointer;
-            padding: 3px 10px;
-            border-radius: 6px;
+            padding: 2px 7px;
+            border-radius: 8px;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
             transition: background 0.2s ease, color 0.2s ease;
         }
 
