@@ -4832,11 +4832,6 @@
                     ${lookupTranslationValue("Login")}
                 </button>
                 </form>
-                <div style="margin: 10px 0; text-align: center; color: var(--text-muted); font-size: 8px; font-weight: 700; letter-spacing: 0.5px;">OR SSO ENVELOPE GATEWAY</div>
-                <button class="google-btn" onclick="triggerGoogleOAuthSimulatedFlow()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" style="margin-right: 4px;"><path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.11C18.416 1.872 15.62 1 12.24 1 5.48 1 0 6.48 0 13.2s5.48 12.2 12.24 12.2c7.055 0 11.75-4.91 11.75-11.93 0-.807-.087-1.427-.193-1.985H12.24z"/></svg>
-                    ${lookupTranslationValue("Continue with Google Identity")}
-                </button>
                 <button class="google-btn" id="biometricLoginBtn"
                     onclick="authenticateWithBiometric()"
                     style="display:none; background:var(--bg-surface); border:1px solid var(--border); margin-top:6px; justify-content:center; color:var(--text-body);">
@@ -5446,20 +5441,6 @@
                         customAlert("Cryptographic records modified cleanly. Please access terminal via updated pass.");
                         renderAuthViewLayoutBox();
                     }
-
-                    window.triggerGoogleOAuthSimulatedFlow = function () {
-                        const emailInput = document.getElementById('authFieldUserEmail');
-                        const email = emailInput ? emailInput.value.trim() : '';
-                        const matchedUser = globalRosterRepository.find(u => u.email === email);
-                        if (matchedUser) {
-                            customAlert(`Demo Google login (no real OAuth). Signed in as: ${matchedUser.name}.`);
-                            initializeAuthenticatedSessionContext(matchedUser);
-                        } else if (globalRosterRepository.length > 0) {
-                            customAlert("Google SSO: No account matches that email in the roster.");
-                        } else {
-                            customAlert("No staff accounts exist. Please add staff first.");
-                        }
-                    };
 
                     window.toggleBiometricSetting = function (enabled) {
                         localStorage.setItem('physioBiometricEnabled', enabled ? 'true' : '');
