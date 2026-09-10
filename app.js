@@ -8328,6 +8328,7 @@
 
                             const card = document.createElement('div');
                             card.className = "staff-card";
+                            card.dataset.email = staff.email;
                             card.style.borderLeft = `5px solid ${staff.accentColor || '#004b87'}`;
 
                             const isCurrentlyActive = (stagedActiveStatusChanges[staff.email] !== undefined)
@@ -8384,16 +8385,42 @@
                              `}
 
                              ${extraFieldsHtml}
-                         </div>
+</div>
+                      </div>
+                     <div style="text-align:center; padding:2px 0;">
+                        <button class="staff-card-expand-btn" onclick="toggleStaffCardExpand('${staff.email}')">▼ Show More</button>
                      </div>
-                 </div>
+                  </div>
                     <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
                         ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
                         ${currentActiveSessionUser.email === staff.email || allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
                 `;
                             container.appendChild(card);
+                            const cardBodyEl = card.querySelector('.staff-card-body');
+                            const expandBtn = card.querySelector('.staff-card-expand-btn');
+                            if (cardBodyEl && expandBtn) {
+                                const isClipped = cardBodyEl.scrollHeight > cardBodyEl.clientHeight + 8;
+                                if (!isClipped) {
+                                    expandBtn.style.display = 'none';
+                                } else if (expandedStaffCardMap[staff.email]) {
+                                    card.classList.add('expanded');
+                                    expandBtn.innerHTML = '▲ Show Less';
+                                }
+                            }
                         });
+                    }
+
+                    let expandedStaffCardMap = {};
+                    try { expandedStaffCardMap = JSON.parse(localStorage.getItem('physioExpandedStaffCards')) || {}; } catch (e) { expandedStaffCardMap = {}; }
+                    function toggleStaffCardExpand(email) {
+                        const card = document.querySelector('.staff-card[data-email="' + email + '"]');
+                        if (!card) return;
+                        const isExpanded = card.classList.toggle('expanded');
+                        expandedStaffCardMap[email] = isExpanded;
+                        try { localStorage.setItem('physioExpandedStaffCards', JSON.stringify(expandedStaffCardMap)); } catch (e) { }
+                        const btn = card.querySelector('.staff-card-expand-btn');
+                        if (btn) btn.innerHTML = isExpanded ? '▲ Show Less' : '▼ Show More';
                     }
 
                     function toggleStaffActiveStatus(email, isActive) {

@@ -1413,6 +1413,51 @@ padding: 10px 16px !important;
             gap: 4px;
         }
 
+        .staff-card-body {
+            max-height: 132px;
+            position: relative;
+        }
+
+        .staff-card.expanded .staff-card-body {
+            max-height: none;
+        }
+
+        .staff-card-body::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 26px;
+            background: linear-gradient(to bottom, transparent, var(--bg-card));
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .staff-card.expanded .staff-card-body::after {
+            opacity: 0;
+        }
+
+        .staff-card-expand-btn {
+            background: var(--bg-inner);
+            border: 1px solid var(--border);
+            color: var(--primary);
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 3px 10px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        .staff-card-expand-btn:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+
 .compliance-badge {
     display: flex;
     justify-content: space-between;
