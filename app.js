@@ -1486,6 +1486,7 @@
                         portalSwitcher: ["Admin", "General Manager", "Head of Physio"],
                         leaveApprover: ["Admin", "General Manager", "Head of Physio"],
                         managementDashboard: ["Admin", "General Manager", "Head of Physio"],
+                        passwordReset: ["Admin", "General Manager", "Head of Physio"],
                         patientTracker: ["Fdo", "executive senior fdo", "executive fdo", "Admin", "General Manager", "Head of Physio", "Physiotherapist", "Head of Training and Recruitment"],
                     };
                     function hasPermission(permKey, user) {
@@ -1520,6 +1521,7 @@
                     let allowedPortalSwitcherRoles = globalPermissionRegistry.portalSwitcher;
                     let allowedLeaveApproverRoles = globalPermissionRegistry.leaveApprover;
                     let allowedManagementDashboardRoles = globalPermissionRegistry.managementDashboard;
+                    let allowedPasswordResetRoles = globalPermissionRegistry.passwordReset;
                     let allowedPatientTrackerRoles = globalPermissionRegistry.patientTracker;
                     // Persistence
                     function syncPatientTrackerVisibility() {
@@ -6879,7 +6881,8 @@
                             { key: 'leaveApprover', label: '✅ Leave Approver', note: 'Which roles can approve/reject staff leave requests' },
                             { key: 'managementDashboard', label: '📊 Management Dashboard', note: 'Which roles see management sections (export all records, modify compliance, discharge exports)' },
                             { key: 'staffExpiryViewer', label: '👁️ Staff Expiry Viewer', note: 'Who can see ALL staff document expiries in the Operations Alert Cockpit (others see only their own)' },
-                            { key: 'patientTracker', label: '👤 Patient Tracker', note: 'Who can access the Patient Prescription & Session Tracker tab in FDO Sheets' }
+                            { key: 'patientTracker', label: '👤 Patient Tracker', note: 'Who can access the Patient Prescription & Session Tracker tab in FDO Sheets' },
+                            { key: 'passwordReset', label: '🔑 Password Reset', note: 'Which roles can reset staff account passwords from the Personnel Directory' }
                         ];
 
                         const roleArrays = {
@@ -6908,7 +6911,8 @@
                             leaveApprover: allowedLeaveApproverRoles,
                             managementDashboard: allowedManagementDashboardRoles,
                             staffExpiryViewer: allowedStaffExpiryViewerRoles,
-                            patientTracker: allowedPatientTrackerRoles
+                            patientTracker: allowedPatientTrackerRoles,
+                            passwordReset: allowedPasswordResetRoles
                         };
 
                         const roles = Object.keys(globalRolePermissionsMatrix);
@@ -6975,7 +6979,8 @@
                             leaveApprover: { arr: allowedLeaveApproverRoles, name: 'Leave Approver' },
                             managementDashboard: { arr: allowedManagementDashboardRoles, name: 'Management Dashboard' },
                             staffExpiryViewer: { arr: allowedStaffExpiryViewerRoles, name: 'Staff Expiry Viewer' },
-                            patientTracker: { arr: allowedPatientTrackerRoles, name: 'Patient Tracker' }
+                            patientTracker: { arr: allowedPatientTrackerRoles, name: 'Patient Tracker' },
+                            passwordReset: { arr: allowedPasswordResetRoles, name: 'Password Reset' }
                         };
 
                         Object.keys(catMap).forEach(key => {
@@ -8402,7 +8407,7 @@
                      </div>
                  </div>
                     <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
-                        ${allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
+                        ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
                         ${currentActiveSessionUser.email === staff.email || allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
                 `;
@@ -8434,7 +8439,7 @@
                     }
 
                     function openStaffPasswordReset(email) {
-                        if (!allowedManagementDashboardRoles.includes(currentActiveSessionUser.position)) {
+                        if (!allowedPasswordResetRoles.includes(currentActiveSessionUser.position)) {
                             customAlert("You do not have permission to reset passwords.");
                             return;
                         }
@@ -8463,7 +8468,7 @@
                     }
 
                     function commitStaffPasswordReset(email) {
-                        if (!allowedManagementDashboardRoles.includes(currentActiveSessionUser.position)) {
+                        if (!allowedPasswordResetRoles.includes(currentActiveSessionUser.position)) {
                             customAlert("You do not have permission to reset passwords.");
                             return;
                         }
