@@ -4826,7 +4826,6 @@
                     <label id="lbl_auth_pass_l">${lookupTranslationValue("Password")}</label>
                     <input type="password" id="authFieldUserPassword" placeholder="••••••••" autocomplete="current-password">
                 </div>
-                <a class="forgot-password-link" id="lbl_forgot_pass_l" onclick="renderForgotPasswordFormStepOne()">${lookupTranslationValue("Forgot Password?")}</a>
                 <button type="submit" class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" id="lbl_auth_btn_l">
                     ${lookupTranslationValue("Login")}
                 </button>
@@ -8402,7 +8401,8 @@
                          </div>
                      </div>
                  </div>
-                    <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px;">
+                    <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                        ${allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
                         ${currentActiveSessionUser.email === staff.email || allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
                 `;
@@ -8431,6 +8431,62 @@
                         }
 
                         renderStaffComplianceDirectory();
+                    }
+
+                    function openStaffPasswordReset(email) {
+                        if (!allowedManagementDashboardRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("You do not have permission to reset passwords.");
+                            return;
+                        }
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return;
+                        const mount = document.getElementById('systemGlobalModalMount');
+                        mount.innerHTML = `
+        <div class="system-inline-modal-overlay">
+            <div class="system-inline-modal-box" style="width:420px;">
+                <h3 style="margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:6px;">🔑 Reset Password: ${staff.name}</h3>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" id="staffResetPassInput" placeholder="••••••••" autocomplete="new-password" style="margin-top:4px;">
+                </div>
+                <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <input type="password" id="staffResetConfirmInput" placeholder="••••••••" autocomplete="new-password" style="margin-top:4px;">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+                    <button class="action-btn" style="background:var(--danger);" onclick="closeSystemModalBox()">Cancel</button>
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitStaffPasswordReset('${staff.email}')">Set New Password</button>
+                </div>
+            </div>
+        </div>
+    `;
+                    }
+
+                    function commitStaffPasswordReset(email) {
+                        if (!allowedManagementDashboardRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("You do not have permission to reset passwords.");
+                            return;
+                        }
+                        const p1 = document.getElementById('staffResetPassInput').value;
+                        const p2 = document.getElementById('staffResetConfirmInput').value;
+                        if (!p1 || !p2) {
+                            customAlert("Please fill out the new password fields.");
+                            return;
+                        }
+                        if (p1 !== p2) {
+                            customAlert("Verification mismatch. Confirmed password must match new password.");
+                            return;
+                        }
+                        if (p1.length < 5) {
+                            customAlert("Cryptographic complexity failure. Password must be at least 5 characters.");
+                            return;
+                        }
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return;
+                        staff.password = p1;
+                        persistCoreStores();
+                        closeSystemModalBox();
+                        customAlert("Password reset successfully for " + staff.name + ".");
                     }
 
                     function isStaffWithinProbationTimeline(hireDateString) {
@@ -14256,17 +14312,11 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     }
 
                     function commitInternalPasswordChange() {
-                        const currentPass = document.getElementById('profileCurrentPasswordInput').value;
                         const newPass = document.getElementById('profileNewPasswordInput').value;
                         const confirmPass = document.getElementById('profileConfirmPasswordInput').value;
 
-                        if (!currentPass || !newPass || !confirmPass) {
-                            customAlert("Please fill out all credential verification fields.");
-                            return;
-                        }
-
-                        if (currentPass !== currentActiveSessionUser.password) {
-                            customAlert("Authentication challenge failed. Current password mismatch.");
+                        if (!newPass || !confirmPass) {
+                            customAlert("Please fill out all credential fields.");
                             return;
                         }
 
@@ -14288,7 +14338,6 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         persistCoreStores();
 
                         customAlert("Security Credentials updated successfully!");
-                        document.getElementById('profileCurrentPasswordInput').value = "";
                         document.getElementById('profileNewPasswordInput').value = "";
                         document.getElementById('profileConfirmPasswordInput').value = "";
                     }

@@ -65,8 +65,6 @@
                                 <input type="password" id="authFieldUserPassword" placeholder="••••••••"
                                     autocomplete="current-password" data-trans-placeholder-key="••••••••">
                             </div>
-                            <a class="forgot-password-link" id="lbl_forgot_pass_l"
-                                onclick="renderForgotPasswordFormStepOne()">Forgot Password?</a>
                             <button type="submit" class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;"
                                 id="lbl_auth_btn_l"
                                 data-trans-key="Login">Login</button>
@@ -10642,17 +10640,6 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                             Modify your active system login password securely from this verified terminal session
                             gateway.</p>
                         <form id="profilePasswordUpdateForm" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:0; padding:0;" onsubmit="event.preventDefault(); commitInternalPasswordChange();">
-                            <div class="p-field" style="flex:1; min-width:180px; margin-bottom:0;">
-                                <label data-trans-key="Current Password">Current Password</label>
-                                <div class="p-input">
-                                    <span class="ico" data-trans-key="🔒">🔒</span>
-                                    <input type="password" id="profileCurrentPasswordInput" placeholder="••••••••"
-                                        autocomplete="current-password"
-                                        data-trans-placeholder-key="••••••••">
-                                    <span class="p-show" onclick="toggleProfilePw('profileCurrentPasswordInput',this)"
-                                        data-trans-key="SHOW">SHOW</span>
-                                </div>
-                            </div>
                             <div class="p-field" style="flex:1; min-width:180px; margin-bottom:0;">
                                 <label data-trans-key="New Secure Password">New Secure Password</label>
                                 <div class="p-input">
