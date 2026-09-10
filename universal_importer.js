@@ -11,7 +11,7 @@
     const IMPORTER_MODULES = {
         fdo_sheets: {
             name: "FDO Sheets / Daily Reception Logs",
-            icon: "≡ƒôï",
+            icon: "📋",
             description: "Daily reception figures, Aasandha / Software entries, and differences.",
             primaryKeyDesc: "Matched by Date (YYYY-MM-DD)",
             fields: [
@@ -29,7 +29,7 @@
         },
         patient_tracker: {
             name: "Patient Tracker & Appointments",
-            icon: "≡ƒ⌐║",
+            icon: "🩺",
             description: "Patient prescriptions, session allotments, consult dates, and treatment status.",
             primaryKeyDesc: "Matched by National ID Card or Patient Name + Date",
             fields: [
@@ -54,7 +54,7 @@
         },
         solarelle_patients: {
             name: "Solarelle Patients (Insurance Billing)",
-            icon: "≡ƒôæ",
+            icon: "📑",
             description: "Solarelle insurance claims, co-payment percentages, and breakdown figures.",
             primaryKeyDesc: "Matched by National ID Card + Date or Patient Name + Date",
             fields: [
@@ -77,7 +77,7 @@
         },
         roster_engine: {
             name: "Grid Roster Engine / Shift Schedules",
-            icon: "≡ƒùô∩╕Å",
+            icon: "🗓️",
             description: "Monthly shift allocations (M=Morning, A=Afternoon, OFF, D=Day, E=Evening, etc.)",
             primaryKeyDesc: "Matched by Staff Email / Name and Schedule Dates",
             fields: [
@@ -95,7 +95,7 @@
         },
         therapist_attendance: {
             name: "Therapist Attendance & Rate Sheet",
-            icon: "ΓÅ▒∩╕Å",
+            icon: "⏱️",
             description: "Monthly therapist attendance sessions, 150/200 min counts, OT, and rates.",
             primaryKeyDesc: "Matched by Therapist Name/Email + Month Cycle",
             fields: [
@@ -113,7 +113,7 @@
         },
         staff_directory: {
             name: "Personnel Directory (Staff Profiles)",
-            icon: "≡ƒæÑ",
+            icon: "👥",
             description: "Staff profiles, designations, department assignments, styles, and balances.",
             primaryKeyDesc: "Matched by Staff Email or Full Name",
             fields: [
@@ -137,7 +137,7 @@
         },
         inventory_supplies: {
             name: "Inventory & Supplies Warehouse",
-            icon: "≡ƒôª",
+            icon: "📦",
             description: "Clinical consumables, supply quantities, minimum thresholds, and units.",
             primaryKeyDesc: "Matched by Item Name + Category",
             fields: [
@@ -157,7 +157,7 @@
         },
         pricing_ref: {
             name: "Pricing Reference & Patient Fees",
-            icon: "≡ƒÅ╖∩╕Å",
+            icon: "🏷️",
             description: "Patient customized pricing, therapist assignments, and appointment schedules.",
             primaryKeyDesc: "Matched by National ID Card or Patient Name + Date",
             fields: [
@@ -177,7 +177,7 @@
         },
         leave_records: {
             name: "Leave & Sick Leave Records",
-            icon: "≡ƒî┤",
+            icon: "🌴",
             description: "Staff leave submissions, sick leave with MC certificates, and approvals.",
             primaryKeyDesc: "Matched by Employee Name/Email + Date + Leave Type",
             fields: [
@@ -199,7 +199,7 @@
         },
         sequential_id: {
             name: "Document Reference Generator",
-            icon: "≡ƒöó",
+            icon: "🔢",
             description: "Sequential ID reference codes, letters, agreements, and memorandums.",
             primaryKeyDesc: "Matched by Sequential Ref ID or Recipient + Date",
             fields: [
@@ -1190,7 +1190,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; border-bottom:1px solid var(--border); padding-bottom:14px;">
                 <div>
                     <h3 style="margin:0 0 4px 0; font-size:16px; font-weight:800; color:var(--text-body); display:flex; align-items:center; gap:8px;">
-                        <span>≡ƒôñ Universal Sheet & Data Importer</span>
+                        <span>📤 Universal Sheet & Data Importer</span>
                         <span style="font-size:10px; font-weight:700; background:var(--primary); color:#fff; padding:2px 8px; border-radius:20px;">MULTI-MODULE ENGINE</span>
                     </h3>
                     <p style="margin:0; font-size:11px; color:var(--text-muted);">
@@ -1199,7 +1199,7 @@
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
                     <button class="action-btn" style="background:var(--bg-card); color:var(--text-body); border:1px solid var(--border); font-size:11px; padding:6px 12px;" onclick="window.downloadCurrentTemplate()">
-                        ≡ƒôÑ Download Blank Template (.xlsx)
+                        📥 Download Blank Template (.xlsx)
                     </button>
                 </div>
             </div>
@@ -1229,9 +1229,9 @@
                         2. Combine & Merge Strategy
                     </label>
                     <select id="uImpCombineMode" onchange="window.handleImporterModeChange(this.value)" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-main); color:var(--text-body); font-size:12px; font-weight:700;">
-                        <option value="merge" selected>≡ƒöä Merge & Update Existing (Append New Records)</option>
-                        <option value="append">Γ₧ò Append Only (Add All Rows as New)</option>
-                        <option value="replace">ΓÜá∩╕Å Replace Module Data (Clear & Re-import)</option>
+                        <option value="merge" selected>🔄 Merge & Update Existing (Append New Records)</option>
+                        <option value="append">➕ Append Only (Add All Rows as New)</option>
+                        <option value="replace">⚠️ Replace Module Data (Clear & Re-import)</option>
                     </select>
                     <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
                         Safely matches records by name & date to prevent duplicate collisions.
@@ -1252,7 +1252,7 @@
 
             <!-- FILE UPLOAD & DROPZONE -->
             <div id="uImpDropzone" style="border:2px dashed var(--border); border-radius:10px; padding:24px; text-align:center; background:var(--bg-card); cursor:pointer; transition:all 0.2s ease; margin-bottom:16px;">
-                <div style="font-size:32px; margin-bottom:6px;">≡ƒôü</div>
+                <div style="font-size:32px; margin-bottom:6px;">📁</div>
                 <div style="font-size:13px; font-weight:700; color:var(--text-body); margin-bottom:4px;">
                     Drop your spreadsheet (.xlsx, .xls, .csv) here or click to browse
                 </div>
@@ -1262,10 +1262,10 @@
                 <input type="file" id="uImpFileInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="window.handleFileSelect(event)">
                 <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
                     <button class="action-btn" style="background:var(--primary); font-size:11px; padding:6px 14px;" onclick="document.getElementById('uImpFileInput').click(); event.stopPropagation();">
-                        ≡ƒôé Choose File
+                        📂 Choose File
                     </button>
                     <button class="action-btn" style="background:var(--bg-inner); color:var(--text-body); border:1px solid var(--border); font-size:11px; padding:6px 14px;" onclick="window.togglePasteArea(); event.stopPropagation();">
-                        ≡ƒôï Paste Table / CSV
+                        📋 Paste Table / CSV
                     </button>
                 </div>
             </div>
@@ -1289,7 +1289,7 @@
             <!-- FILE STATUS BANNER -->
             <div id="uImpFileBanner" style="display:none; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.3); border-radius:8px; padding:10px 14px; margin-bottom:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:18px;">Γ£à</span>
+                    <span style="font-size:18px;">✅</span>
                     <div>
                         <div id="uImpFileName" style="font-weight:700; font-size:12px; color:var(--text-body);"></div>
                         <div id="uImpFileMeta" style="font-size:10px; color:var(--text-muted);"></div>
@@ -1343,7 +1343,7 @@
                         Reset
                     </button>
                     <button class="action-btn" id="uImpExecuteBtn" style="background:var(--success); font-size:12px; font-weight:800; padding:8px 20px; box-shadow:0 2px 10px rgba(34,197,94,0.3);" onclick="window.executeUniversalImport()">
-                        ≡ƒÜÇ Execute Import & Combine Data
+                        🚀 Execute Import & Combine Data
                     </button>
                 </div>
             </div>
@@ -1488,7 +1488,7 @@
         if (fileBanner) fileBanner.style.display = 'flex';
         if (fileNameEl) fileNameEl.innerText = activeParsedData.fileName;
         if (fileMetaEl) {
-            fileMetaEl.innerText = `${activeParsedData.rawRows.length} data rows detected ΓÇó ${activeParsedData.rawHeaders.length} columns`;
+            fileMetaEl.innerText = `${activeParsedData.rawRows.length} data rows detected • ${activeParsedData.rawHeaders.length} columns`;
         }
 
         const sheetSelectWrap = document.getElementById('uImpSheetSelectorWrap');
@@ -1595,10 +1595,10 @@
         <tbody>
             ${previewRows.map((row, idx) => {
                 const actionBadge = activeParsedData.combineMode === 'merge'
-                    ? `<span style="background:rgba(59,130,246,0.15); color:var(--primary); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">≡ƒöä Merge / Sync</span>`
+                    ? `<span style="background:rgba(59,130,246,0.15); color:var(--primary); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">🔄 Merge / Sync</span>`
                     : activeParsedData.combineMode === 'replace'
-                        ? `<span style="background:rgba(239,68,68,0.15); color:var(--danger); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">ΓÜá∩╕Å Overwrite</span>`
-                        : `<span style="background:rgba(34,197,94,0.15); color:var(--success); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">Γ₧ò Append</span>`;
+                        ? `<span style="background:rgba(239,68,68,0.15); color:var(--danger); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">⚠️ Overwrite</span>`
+                        : `<span style="background:rgba(34,197,94,0.15); color:var(--success); font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px;">➕ Append</span>`;
 
                 return `
                 <tr style="border-bottom:1px solid var(--border);">
@@ -1620,7 +1620,7 @@
         if (statsEl) {
             statsEl.innerHTML = `
             <span style="background:var(--bg-inner); border:1px solid var(--border); padding:3px 8px; border-radius:4px; font-weight:600;">
-                ≡ƒôè Total Sheet Rows: <strong>${mappedRows.length}</strong>
+                📊 Total Sheet Rows: <strong>${mappedRows.length}</strong>
             </span>
             <span style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.3); color:var(--success); padding:3px 8px; border-radius:4px; font-weight:700;">
                 Mode: <strong>${activeParsedData.combineMode.toUpperCase()}</strong>
@@ -1715,7 +1715,7 @@
             const btn = document.getElementById('uImpExecuteBtn');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = 'ΓÅ│ Combining Data...';
+                btn.innerHTML = '⏳ Combining Data...';
             }
 
             const result = handler(mappedRows, activeParsedData.combineMode, options);
@@ -1723,7 +1723,7 @@
             setTimeout(() => {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '≡ƒÜÇ Execute Import & Combine Data';
+                    btn.innerHTML = '🚀 Execute Import & Combine Data';
                 }
 
                 const msg = `🎉 Import Complete for ${schema.name}!\n\n` +
