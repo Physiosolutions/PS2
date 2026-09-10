@@ -1712,6 +1712,95 @@
                             }
                         } catch (e) { }
                     }
+                    function persistCoreStores() {
+                        if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
+                        if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
+                        persistRolePermissionsMatrix();
+                        persistTextDictionary();
+                        persistReferenceRepository();
+                        try { localStorage.setItem('physioFollowupCasesRepository', JSON.stringify(globalFollowupCasesRepository)); } catch (e) { }
+                        try { localStorage.setItem('physioCalendarNotesRepository', JSON.stringify(calendarNotesRepository)); } catch (e) { }
+                        try { localStorage.setItem('physioPersonalChecklistTasks', JSON.stringify(personalChecklistTasks)); } catch (e) { }
+                        try { localStorage.setItem('physioOTSheetDraft', JSON.stringify(localUserOTSheetDraft)); } catch (e) { }
+                        try { localStorage.setItem('physioTherapistOTSubmissions', JSON.stringify(globalTherapistOTSubmissions)); } catch (e) { }
+                        try { localStorage.setItem('physioAdminComparativeDB', JSON.stringify(globalAdminComparativeDatabase)); } catch (e) { }
+                        try { localStorage.setItem('physioStaffChangesetPipeline', JSON.stringify(staffProfileChangesetPipeline)); } catch (e) { }
+                        try { localStorage.setItem('physioDirectChatLog', JSON.stringify(directChatLog)); } catch (e) { }
+                        try { localStorage.setItem('physioGroupChats', JSON.stringify(globalGroupChats)); } catch (e) { }
+                        try { localStorage.setItem('physioGroupChatMessages', JSON.stringify(groupChatMessages)); } catch (e) { }
+                        try { localStorage.setItem('physioUnreadMessageCounts', JSON.stringify(unreadMessageCounts)); } catch (e) { }
+                        try { localStorage.setItem('physioNotificationStore', JSON.stringify(notificationStore)); } catch (e) { }
+                        try { localStorage.setItem('physioCustomRegisteredTables', JSON.stringify(customRegisteredTables)); } catch (e) { }
+                        try { localStorage.setItem('physioCustomTableSequences', JSON.stringify(customTableSequences)); } catch (e) { }
+                        try { localStorage.setItem('physioSystemAlertLogs', JSON.stringify(systemAlertLogs)); } catch (e) { }
+                        try { localStorage.setItem('physioLoginSessionLogs', JSON.stringify(globalLoginLogsRepository)); } catch (e) { }
+                    }
+                    function loadCoreStores() {
+                        try {
+                            const _f = localStorage.getItem('physioFollowupCasesRepository');
+                            if (_f) { const p = JSON.parse(_f); if (Array.isArray(p)) globalFollowupCasesRepository = p; }
+                        } catch (e) { }
+                        try {
+                            const _n = localStorage.getItem('physioCalendarNotesRepository');
+                            if (_n) { const p = JSON.parse(_n); if (p && typeof p === 'object' && !Array.isArray(p)) calendarNotesRepository = Object.assign(calendarNotesRepository, p); }
+                        } catch (e) { }
+                        try {
+                            const _t = localStorage.getItem('physioPersonalChecklistTasks');
+                            if (_t) { const p = JSON.parse(_t); if (Array.isArray(p)) personalChecklistTasks = p; }
+                        } catch (e) { }
+                        try {
+                            const _o = localStorage.getItem('physioOTSheetDraft');
+                            if (_o) { const p = JSON.parse(_o); if (p && typeof p === 'object' && !Array.isArray(p)) localUserOTSheetDraft = Object.assign(localUserOTSheetDraft, p); }
+                        } catch (e) { }
+                        try {
+                            const _c = localStorage.getItem('physioAdminComparativeDB');
+                            if (_c) { const p = JSON.parse(_c); if (p && typeof p === 'object' && !Array.isArray(p)) globalAdminComparativeDatabase = Object.assign(globalAdminComparativeDatabase, p); }
+                        } catch (e) { }
+                        try {
+                            const _ts = localStorage.getItem('physioTherapistOTSubmissions');
+                            if (_ts) { const p = JSON.parse(_ts); if (p && typeof p === 'object' && !Array.isArray(p)) globalTherapistOTSubmissions = Object.assign(globalTherapistOTSubmissions, p); }
+                        } catch (e) { }
+                        try {
+                            const _s = localStorage.getItem('physioStaffChangesetPipeline');
+                            if (_s) { const p = JSON.parse(_s); if (Array.isArray(p)) staffProfileChangesetPipeline = p; }
+                        } catch (e) { }
+                        try {
+                            const _d = localStorage.getItem('physioDirectChatLog');
+                            if (_d) { const p = JSON.parse(_d); if (Array.isArray(p)) directChatLog = p; }
+                        } catch (e) { }
+                        try {
+                            const _g = localStorage.getItem('physioGroupChats');
+                            if (_g) { const p = JSON.parse(_g); if (Array.isArray(p)) globalGroupChats = p; }
+                        } catch (e) { }
+                        try {
+                            const _gm = localStorage.getItem('physioGroupChatMessages');
+                            if (_gm) { const p = JSON.parse(_gm); if (p && typeof p === 'object' && !Array.isArray(p)) groupChatMessages = Object.assign(groupChatMessages, p); }
+                        } catch (e) { }
+                        try {
+                            const _u = localStorage.getItem('physioUnreadMessageCounts');
+                            if (_u) { const p = JSON.parse(_u); if (p && typeof p === 'object' && !Array.isArray(p)) unreadMessageCounts = Object.assign(unreadMessageCounts, p); }
+                        } catch (e) { }
+                        try {
+                            const _not = localStorage.getItem('physioNotificationStore');
+                            if (_not) { const p = JSON.parse(_not); if (Array.isArray(p)) notificationStore = p; }
+                        } catch (e) { }
+                        try {
+                            const _ct = localStorage.getItem('physioCustomRegisteredTables');
+                            if (_ct) { const p = JSON.parse(_ct); if (p && typeof p === 'object' && !Array.isArray(p)) customRegisteredTables = p; }
+                        } catch (e) { }
+                        try {
+                            const _cs = localStorage.getItem('physioCustomTableSequences');
+                            if (_cs) { const p = JSON.parse(_cs); if (p && typeof p === 'object' && !Array.isArray(p)) customTableSequences = p; }
+                        } catch (e) { }
+                        try {
+                            const _al = localStorage.getItem('physioSystemAlertLogs');
+                            if (_al) { const p = JSON.parse(_al); if (Array.isArray(p)) systemAlertLogs = p; }
+                        } catch (e) { }
+                        try {
+                            const _ll = localStorage.getItem('physioLoginSessionLogs');
+                            if (_ll) { const p = JSON.parse(_ll); if (Array.isArray(p)) globalLoginLogsRepository = p; }
+                        } catch (e) { }
+                    }
                     let staffProfileChangesetPipeline = [];
                     let systemAlertLogs = [];
                     let referenceSequences = { "P": 0, "A": 0, "M": 0 };
@@ -1734,6 +1823,8 @@
                         try { localStorage.setItem('physioDischargeRecords', JSON.stringify(dischargeRecords)); } catch (e) { }
                     }
                     let globalFollowupCasesRepository = [];
+                    let customRegisteredTables = {};
+                    let customTableSequences = {};
                     let directChatLog = [];
                     let chatActivePeerEmail = "";
                     let unreadMessageCounts = {};
@@ -4675,7 +4766,7 @@
                         }
                         return systemTextDictionary[key] || key;
                     }
-                    window.executeSimulatedAuthenticationChallenge = function () {
+                    window.executeAuthenticationChallenge = function () {
                         const btn = document.getElementById('lbl_auth_btn_l');
                         if (btn) {
                             btn.disabled = true;
@@ -4726,7 +4817,7 @@
 
                         // Build the login form HTML (shared between both layouts)
                         const loginFormHtml = `
-                <form id="authDynamicLoginForm" onsubmit="event.preventDefault(); executeSimulatedAuthenticationChallenge();" style="margin: 0; padding: 0;">
+                <form id="authDynamicLoginForm" onsubmit="event.preventDefault(); executeAuthenticationChallenge();" style="margin: 0; padding: 0;">
                 <div class="form-group">
                     <label id="lbl_auth_email_l">${lookupTranslationValue("Email or Username")}</label>
                     <input type="text" id="authFieldUserEmail" placeholder="username or email@domain.mv" autocomplete="username" spellcheck="false">
@@ -5048,17 +5139,12 @@
                     }
 
                     function runSystemRosterCoreInitialization() {
-                        // One-time clear of old demo data from localStorage
-                        if (!localStorage.getItem('physioDataCleared')) {
-                            localStorage.clear();
-                            localStorage.setItem('physioDataCleared', 'true');
-                            document.documentElement.style.setProperty('--login-logo-img', '""');
-                        }
-                        // One-time wipe of all module test entries from earlier sessions
-                        if (!localStorage.getItem('physioDataResetV2')) {
-                            ['physioMaintenanceData','physioSolarelleData','physioHandoverData','physioFdoSheetData','physioAasandhaData','physioDischargeRecords','physioCashDrawer1st','physioCashDrawer2nd','physioPricingRefData','physioFdoAttManual','physioFdoAttOvertime','physioFdoOtAtt','physioSealesData','patientTrackerData','patientRepository'].forEach(function(k){ try { localStorage.removeItem(k); } catch(e){} });
-                            localStorage.setItem('physioDataResetV2', 'true');
-                        }
+                        // NOTE: Destructive one-time localStorage.clear() wipes were removed.
+                        // Nothing in this app seeds demo data, so there is nothing to clean;
+                        // running localStorage.clear() on first load wiped real user data.
+                        // Flags kept for backward compatibility with older installs.
+                        try { localStorage.setItem('physioDataCleared', 'true'); } catch (e) { }
+                        try { localStorage.setItem('physioDataResetV2', 'true'); } catch (e) { }
                         globalBrandingLogoUrl = '';
                         initializePSCalendarDefaults();
                         const now = new Date();
@@ -5207,31 +5293,100 @@
             `;
                     }
 
+                    let globalRecoveryFlow = null;
+
+                    function generateRecoveryNonce() {
+                        try {
+                            if (window.crypto && window.crypto.getRandomValues) {
+                                const arr = new Uint8Array(16);
+                                window.crypto.getRandomValues(arr);
+                                return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+                            }
+                        } catch (e) { }
+                        return String(Date.now()).padStart(14, '0') + Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, '0');
+                    }
+
+                    function requestRecoveryCode(email) {
+                        const nonce = generateRecoveryNonce();
+                        customAlert(`Sending a 6-digit recovery code to ${email}...`);
+                        fetch('/api/otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'send', email, nonce })
+                        })
+                            .then(r => r.json().catch(() => ({ ok: false, error: 'Unexpected server response.' })))
+                            .then(function (res) {
+                                if (res.ok && res.token) {
+                                    globalRecoveryFlow = { email: email.toLowerCase(), nonce, token: res.token, expiry: res.expiry };
+                                    customAlert(`A 6-digit recovery code has been sent to ${email}. Check your inbox (and spam) — it expires in 10 minutes.`);
+                                    renderForgotPasswordFormStepTwo(email);
+                                } else {
+                                    customAlert("Could not send the code: " + (res.error || 'Unknown error.'));
+                                }
+                            })
+                            .catch(function () {
+                                customAlert("Network error contacting the recovery service. Check your connection and try again.");
+                            });
+                    }
+
                     function executeRecoveryStepOneSubmit() {
                         const email = document.getElementById('recoveryEmailField').value.trim();
                         if (!email) { customAlert("Please provide valid verified criteria."); return; }
-                        customAlert(`Secured 6-Digit authorization OTP code dispatched to clinic route: ${email}. Simulation Code: 889912`);
-                        renderForgotPasswordFormStepTwo(email);
+                        requestRecoveryCode(email);
+                    }
+
+                    function resendRecoveryCode(email) {
+                        requestRecoveryCode(email);
                     }
 
                     function renderForgotPasswordFormStepTwo(targetEmailAddress) {
                         const formArea = getActiveAuthFormArea();
                         formArea.innerHTML = `
                 <h3 style="margin-bottom:6px;">🔐 Phase 2: Enter Verification Key Code</h3>
-                <p style="color:var(--text-muted); margin-bottom:12px; font-size:10px;">Input the 6-Digit token sent to: <strong>${targetEmailAddress}</strong></p>
+                <p style="color:var(--text-muted); margin-bottom:12px; font-size:10px;">We emailed a 6-digit code to: <strong>${targetEmailAddress}</strong>. Enter it below to continue.</p>
                 <div class="form-group">
                     <label>6-Digit Verification Token</label>
-                    <input type="text" id="recoveryOtpField" placeholder="889912" maxlength="6">
+                    <input type="text" id="recoveryOtpField" placeholder="000000" maxlength="6" inputmode="numeric">
                 </div>
                 <button class="action-btn" style="width:100%; justify-content:center; margin-bottom:8px;" onclick="executeRecoveryStepTwoSubmit('${targetEmailAddress}')">Verify Token Security Match</button>
-                <button class="action-btn" style="width:100%; justify-content:center; background:var(--text-muted);" onclick="renderForgotPasswordFormStepOne()">Restart Recovery Sequence</button>
+                <button class="action-btn" style="width:100%; justify-content:center; background:var(--text-muted); margin-bottom:8px;" onclick="renderForgotPasswordFormStepOne()">Restart Recovery Sequence</button>
+                <button class="action-btn" style="width:100%; justify-content:center; background:var(--bg-inner); color:var(--text-muted);" onclick="resendRecoveryCode('${targetEmailAddress}')">Resend Code</button>
             `;
                     }
 
                     function executeRecoveryStepTwoSubmit(email) {
                         const otp = document.getElementById('recoveryOtpField').value.trim();
-                        if (otp !== "889912") { customAlert("OTP code verification failed. Match sequence invalid."); return; }
-                        renderForgotPasswordFormStepThree(email);
+                        if (!/^\d{6}$/.test(otp)) { customAlert("Please enter the 6-digit code from your email."); return; }
+                        if (!globalRecoveryFlow || globalRecoveryFlow.email !== email.toLowerCase()) {
+                            customAlert("Recovery session missing. Please restart the recovery sequence.");
+                            renderForgotPasswordFormStepOne();
+                            return;
+                        }
+                        customAlert("Verifying code...");
+                        fetch('/api/otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'verify',
+                                email: globalRecoveryFlow.email,
+                                otp: otp,
+                                nonce: globalRecoveryFlow.nonce,
+                                token: globalRecoveryFlow.token,
+                                expiry: globalRecoveryFlow.expiry
+                            })
+                        })
+                            .then(r => r.json().catch(() => ({ ok: false, error: 'Unexpected server response.' })))
+                            .then(function (res) {
+                                if (res.ok) {
+                                    globalRecoveryFlow = null;
+                                    renderForgotPasswordFormStepThree(email);
+                                } else {
+                                    customAlert("Code could not be verified: " + (res.error || 'Unknown error.'));
+                                }
+                            })
+                            .catch(function () {
+                                customAlert("Network error contacting the recovery service. Check your connection and try again.");
+                            });
                     }
 
                     function renderForgotPasswordFormStepThree(email) {
@@ -5284,6 +5439,7 @@
 
                         const matchedUser = globalRosterRepository.find(u => u.email === email);
                         if (matchedUser) matchedUser.password = p1;
+                        persistCoreStores();
                         customAlert("Cryptographic records modified cleanly. Please access terminal via updated pass.");
                         renderAuthViewLayoutBox();
                     }
@@ -5293,7 +5449,7 @@
                         const email = emailInput ? emailInput.value.trim() : '';
                         const matchedUser = globalRosterRepository.find(u => u.email === email);
                         if (matchedUser) {
-                            customAlert(`Simulated Google SSO Authentication success! Logged in as: ${matchedUser.name}`);
+                            customAlert(`Demo Google login (no real OAuth). Signed in as: ${matchedUser.name}.`);
                             initializeAuthenticatedSessionContext(matchedUser);
                         } else if (globalRosterRepository.length > 0) {
                             customAlert("Google SSO: No account matches that email in the roster.");
@@ -5354,10 +5510,11 @@
                                 return;
                             }
                         } else {
-                            localStorage.setItem('physioBiometricCredentialId', 'simulated_' + Date.now());
+                            customAlert('Biometric (WebAuthn) is not available in this context. No simulated credential was stored. Use the normal email/password sign-in instead.');
+                            return;
                         }
                         document.getElementById('biometricRegisteredInfo').style.display = 'block';
-                        document.getElementById('biometricRegisteredInfo').textContent = '?? Biometric registered successfully on this device.';
+                        document.getElementById('biometricRegisteredInfo').textContent = '? Biometric registered successfully on this device.';
                         document.getElementById('registerBiometricBtn').style.display = 'none';
                         customAlert('Fingerprint / Face registered successfully!');
                         updateBiometricLoginButtonVisibility();
@@ -5389,9 +5546,12 @@
                                 }
                                 return;
                             }
+                        } else {
+                            customAlert('Biometric (WebAuthn) is not available in this context. Use the normal email/password sign-in instead.');
+                            return;
                         }
-                        const defaultUser = globalRosterRepository[0];
-                        initializeAuthenticatedSessionContext(defaultUser);
+                        customAlert('Biometric verification requires the associated account email. Please complete the normal sign-in to associate your session.');
+                        return;
                     };
 
                     // Show/hide biometric login button when login form renders
@@ -5440,7 +5600,7 @@
                             document.getElementById('adminPortalSwitcher').classList.add('hidden');
                         }
 
-                        // Login already logged in executeSimulatedAuthenticationChallenge — no duplicate needed
+                        // Login already logged in executeAuthenticationChallenge — no duplicate needed
                         rebuildDynamicPortalMenus();
 
                         let initialView = "my_profile";
@@ -6314,6 +6474,7 @@
                     </table>
                 </div>
             `;
+                        setTimeout(() => renderCustomRegisteredTableBody(modKey), 0);
                     }
 
                     function commitCustomRegisteredTableEntry(modKey) {
@@ -6321,18 +6482,38 @@
                         const desc = document.getElementById(`custEntryDesc_${modKey}`).value.trim();
                         if (!desc) { customAlert("Please include descriptive details before committing."); return; }
 
-                        const tbody = document.getElementById(`customRegisteredTableBody_${modKey}`);
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                <td><strong>#C-${Math.floor(Math.random() * 9000 + 1000)}</strong></td>
-                <td>${date}</td>
-                <td>${desc}</td>
-            `;
-                        if (tbody.innerHTML.includes("No custom logs recorded")) tbody.innerHTML = "";
-                        tbody.appendChild(row);
+                        if (!customRegisteredTables[modKey]) customRegisteredTables[modKey] = [];
+                        if (!customTableSequences[modKey]) customTableSequences[modKey] = 0;
+                        customTableSequences[modKey] += 1;
 
+                        customRegisteredTables[modKey].push({
+                            id: customTableSequences[modKey],
+                            date: date,
+                            desc: desc,
+                            createdAt: new Date().toISOString()
+                        });
+                        persistCoreStores();
+
+                        renderCustomRegisteredTableBody(modKey);
                         document.getElementById(`custEntryDesc_${modKey}`).value = "";
                         customAlert("Log entry added to custom schema instance.");
+                    }
+
+                    function renderCustomRegisteredTableBody(modKey) {
+                        const tbody = document.getElementById(`customRegisteredTableBody_${modKey}`);
+                        if (!tbody) return;
+                        const rows = customRegisteredTables[modKey] || [];
+                        if (rows.length === 0) {
+                            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">No custom logs recorded</td></tr>`;
+                            return;
+                        }
+                        tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td><strong>#C-${String(r.id).padStart(4, '0')}</strong></td>
+                    <td>${r.date}</td>
+                    <td>${r.desc}</td>
+                </tr>
+            `).join('');
                     }
 
                     // Renders the main Dashboard landing page using a balanced, 2-column grid system
@@ -7056,7 +7237,17 @@
                     }
 
                     function saveExportBrandingTemplate() {
-                        customAlert("Table Layout & Brand Identity configuration mapped cleanly across clinical export frameworks.");
+                        const header = document.getElementById('exportHeader');
+                        const footer = document.getElementById('exportFooter');
+                        const font = document.getElementById('exportFont');
+                        const branding = {
+                            header: header ? header.value.trim() : 'PHYSIO SOLUTIONS CLINICAL RECORDS EXPORT',
+                            footer: footer ? footer.value.trim() : 'This document contains strictly protected clinical resources. System authenticated.',
+                            font: font ? font.value : 'Manrope',
+                            updatedAt: new Date().toISOString()
+                        };
+                        try { localStorage.setItem('physioExportBrandingTemplate', JSON.stringify(branding)); } catch (e) { }
+                        customAlert("Table Layout & Brand Identity configuration saved. It will apply to future PDF/Excel exports.");
                     }
 
                     function executeDatabaseBackupSimulator() {
@@ -7772,6 +7963,7 @@
                             }
                             staffProfileChangesetPipeline.splice(index, 1);
                         }
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -8496,6 +8688,7 @@ ${extraInputsHtml}
                             customAlert("Credentials properties synchronized cleanly across database nodes.");
                         }
                         closeSystemModalBox();
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -8950,6 +9143,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
 
                         closeSystemModalBox();
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -10289,6 +10483,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     const dictPageSize = 15;
                     let dictFilteredKeys = [];
                     let dictDebounce = null;
+                    let dictPersistTimer = null;
 
                     function renderDictionaryControlSettingsPanel() {
                         dictCurrentPage = 1;
@@ -10401,7 +10596,12 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const key = input.getAttribute('data-key');
                         systemTextDictionary[key] = value;
                         clearTimeout(dictDebounce);
-                        dictDebounce = setTimeout(filterMiniDictionary, 500);
+                        dictDebounce = setTimeout(function () { try { persistTextDictionary(); } catch (e) { } filterMiniDictionary(); }, 500);
+                    }
+
+                    function scheduleDictionaryPersist() {
+                        clearTimeout(dictPersistTimer);
+                        dictPersistTimer = setTimeout(function () { try { persistTextDictionary(); } catch (e) { } }, 500);
                     }
 
                     function changeDictionaryPage(dir) {
@@ -10440,7 +10640,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 <input type="text" 
                        value="${dictionaryValue}" 
                        style="width:100%; padding: 4px 8px; font-size: 12px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: 4px;" 
-                       oninput="systemTextDictionary['${key.replace(/'/g, "\\'")}'] = this.value; refreshDictionaryInlineStats();">
+                       oninput="systemTextDictionary['${key.replace(/'/g, "\\'")}'] = this.value; refreshDictionaryInlineStats(); scheduleDictionaryPersist();">
             `;
                                 container.appendChild(div);
                                 count++;
@@ -11420,17 +11620,124 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     }
 
                     // PDF / Excel exports for Working Days
-                    function exportWorkingDaysPDF() {
+                    function computeWorkingDaysReport() {
                         const year = document.getElementById('wdYearFilter').value;
                         const month = document.getElementById('wdMonthFilter').value;
-                        const label = month === '__all__' ? 'Year ' + year : 'Month ' + month + '/' + year;
-                        customAlert('Working Days report would export as PDF for ' + label);
+                        const group = document.getElementById('wdGroupFilter').value;
+                        const status = document.getElementById('wdStatusFilter').value;
+                        const emailFilter = document.getElementById('wdEmployeeFilter').value;
+
+                        let staffList = globalRosterRepository.filter(s => {
+                            if (group !== 'all' && getStaffGroup(s) !== group) return false;
+                            if (status !== 'all' && getStaffEmploymentType(s) !== status) return false;
+                            if (emailFilter !== '__all__' && s.email !== emailFilter) return false;
+                            return true;
+                        });
+
+                        let startDate, endDate;
+                        if (month === '__all__') {
+                            startDate = year + '-01-01';
+                            endDate = year + '-12-31';
+                        } else {
+                            const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+                            startDate = year + '-' + month + '-01';
+                            endDate = year + '-' + month + '-' + String(lastDay).padStart(2, '0');
+                        }
+
+                        const totalDays = [];
+                        const d = new Date(startDate);
+                        const end = new Date(endDate);
+                        while (d <= end) {
+                            totalDays.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+                            d.setDate(d.getDate() + 1);
+                        }
+                        const holidaySet = new Set(getHolidayDatesInRange(startDate, endDate));
+
+                        const rows = staffList.map(staff => {
+                            let fridays = 0, holidays = 0, leaves = 0;
+                            const leaveSet = getLeaveDatesForStaff(staff.email, startDate, endDate);
+                            totalDays.forEach(ds => {
+                                const dt = new Date(ds);
+                                if (dt.getDay() === 5) { fridays++; return; }
+                                if (holidaySet.has(ds)) { holidays++; return; }
+                                if (leaveSet.has(ds)) { leaves++; return; }
+                            });
+                            const openDays = totalDays.length - fridays - holidays;
+                            const worked = openDays - leaves;
+                            const pct = openDays > 0 ? Math.round(worked / openDays * 100) : 0;
+                            return { name: staff.name, position: staff.position, calendar: totalDays.length, fridays, holidays, openDays, leaves, worked, pct };
+                        });
+
+                        return { year, month, startDate, endDate, rows };
                     }
-                    function exportWorkingDaysExcel() {
-                        const year = document.getElementById('wdYearFilter').value;
-                        const month = document.getElementById('wdMonthFilter').value;
+
+                    function exportWorkingDaysPDF() {
+                        const { year, month, rows } = computeWorkingDaysReport();
                         const label = month === '__all__' ? 'Year ' + year : 'Month ' + month + '/' + year;
-                        customAlert('Working Days report would export as Excel for ' + label);
+                        const branding = loadExportBrandingTemplate();
+
+                        const tableHtml = `
+                <html><head><style>
+                    body { font-family: ${branding.font === 'Courier' ? "'Courier New', monospace" : (branding.font === 'Inter' ? "'Inter', sans-serif" : "'Manrope', sans-serif")}; padding: 20px; color: #111; }
+                    h2 { text-align: center; margin-bottom: 2px; }
+                    h4 { text-align: center; color: #555; margin-top: 2px; font-weight: normal; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 11px; }
+                    th, td { border: 1px solid #444; padding: 5px 6px; text-align: center; }
+                    th { background: #004b87; color: #fff; }
+                    td:first-child, th:first-child { text-align: left; }
+                    .footer { margin-top: 14px; font-size: 9px; color: #666; text-align: center; }
+                </style></head><body>
+                    <h2>${escapeHtml(branding.header)}</h2>
+                    <h4>Working Days Report — ${escapeHtml(label)}</h4>
+                    <table>
+                        <thead><tr><th>Staff</th><th>Position</th><th>Calendar Days</th><th>Fridays</th><th>Holidays</th><th>Open Days</th><th>Leave Days</th><th>Worked Days</th><th>%</th></tr></thead>
+                        <tbody>
+                            ${rows.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.position)}</td><td>${r.calendar}</td><td>${r.fridays}</td><td>${r.holidays}</td><td>${r.openDays}</td><td>${r.leaves}</td><td>${r.worked}</td><td>${r.pct}%</td></tr>`).join('')}
+                        </tbody>
+                    </table>
+                    <div class="footer">${escapeHtml(branding.footer)}</div>
+                </body></html>`;
+
+                        const container = document.createElement('div');
+                        container.innerHTML = tableHtml;
+                        container.style.position = 'absolute';
+                        container.style.left = '-9999px';
+                        container.style.top = '0';
+                        document.body.appendChild(container);
+                        const filename = 'Working_Days_' + label.replace(/[^a-zA-Z0-9]/g, '_') + '.pdf';
+                        html2pdf().set({ filename, margin: [8, 8, 8, 8], image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' } }).from(container).save().then(() => {
+                            document.body.removeChild(container);
+                        });
+                    }
+
+                    function loadExportBrandingTemplate() {
+                        try {
+                            const saved = JSON.parse(localStorage.getItem('physioExportBrandingTemplate'));
+                            if (saved && saved.header) return saved;
+                        } catch (e) { }
+                        return { header: 'PHYSIO SOLUTIONS CLINICAL RECORDS EXPORT', footer: 'This document contains strictly protected clinical resources. System authenticated.', font: 'Manrope' };
+                    }
+
+                    function csvEscape(val) {
+                        const s = String(val);
+                        if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+                        return s;
+                    }
+
+                    function exportWorkingDaysExcel() {
+                        const { year, month, rows } = computeWorkingDaysReport();
+                        const label = month === '__all__' ? 'Year ' + year : 'Month ' + month + '/' + year;
+                        const headerRow = ['Staff', 'Position', 'Calendar Days', 'Fridays', 'Holidays', 'Open Days', 'Leave Days', 'Worked Days', 'Attendance %'];
+                        const lines = [headerRow.join(',')];
+                        rows.forEach(r => lines.push([csvEscape(r.name), csvEscape(r.position), r.calendar, r.fridays, r.holidays, r.openDays, r.leaves, r.worked, r.pct + '%'].join(',')));
+                        const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = 'Working_Days_' + label.replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(a.href);
                     }
 
                     // ===== SICK LEAVE MATRIX =====
@@ -13020,6 +13327,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (status === "Approved") {
                             syncLeaveToTracking({ email: currentActiveSessionUser.email, employee: currentActiveSessionUser.name, type, fromDate, toDate });
                         }
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                         // Refresh sick leave matrix if on that tab
                         const sickTab = document.getElementById('ls_tab_sick');
@@ -13559,6 +13867,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 });
                             }
                         }
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                         const trackTab = document.getElementById('ls_tab_tracking');
                         if (trackTab && trackTab.style.display !== 'none') renderLeaveTracking();
@@ -13940,6 +14249,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         // Revert view back to Read-Only mode
                         toggleProfileEditMode(false);
+                        persistCoreStores();
                         customAlert("Change request submitted. Administrative authorization is required to apply modifications.");
                     }
 
@@ -13973,6 +14283,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         if (rosterUser) {
                             rosterUser.password = newPass;
                         }
+                        persistCoreStores();
 
                         customAlert("Security Credentials updated successfully!");
                         document.getElementById('profileCurrentPasswordInput').value = "";
@@ -15398,6 +15709,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         document.getElementById('followupDetails').value = "";
 
                         customAlert(`Follow-up case successfully assigned to ${therapistName}. Therapist alert notification triggered.`);
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -15472,6 +15784,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                             customAlert("Follow-up case parameters synchronized successfully.");
                             closeSystemModalBox();
+                            persistCoreStores();
                             synchronizeWorkspaceCoreStatus();
                         }
                     }
@@ -15695,6 +16008,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         } else {
                             currentDraft[dateKey][property] = value;
                         }
+                        persistCoreStores();
                         calculateAndRenderLocalOTTimesheetFootTotals();
                     }
 
@@ -15750,6 +16064,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         globalTherapistOTSubmissions[route][globalOTSelectedYear][globalOTSelectedMonth] = JSON.parse(JSON.stringify(currentDraft));
                         customAlert("Timesheet validated and compiled. Dispatched directly to the Master OT matrix.");
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -16369,6 +16684,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         });
 
                         customAlert("Comparative administrative baseline records logged successfully.");
+                        persistCoreStores();
                         renderAdminComparativeEntryGrid();
                         executeAutoReconciliationCompareCheck();
                     }
@@ -16814,6 +17130,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         if (supervisorAutoSaveTimer) clearTimeout(supervisorAutoSaveTimer);
                         supervisorAutoSaveTimer = setTimeout(function () {
                             supervisorAutoSaveTimer = null;
+                            persistCoreStores();
                             renderSupervisorMultiTherapistOTGrid();
                         }, 100);
                     }
@@ -16972,6 +17289,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         }
 
                         customAlert("Discrepancy resolved and database registers synchronized.");
+                        persistCoreStores();
                         triggerActiveTimesheetComparison(); // Refreshes the compare list details
                         synchronizeWorkspaceCoreStatus(); // Refreshes active spreadsheet views across all modules instantly
                     }
@@ -17845,12 +18163,11 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         persistRolePermissionsMatrix();
                         persistTextDictionary();
                         persistReferenceRepository();
+                        loadCoreStores();
                         loadSchedulerConfig();
                         startSchedulerTick();
                         window.addEventListener('beforeunload', function () {
-                            persistRolePermissionsMatrix();
-                            persistTextDictionary();
-                            persistReferenceRepository();
+                            persistCoreStores();
                         });
 
                         // 3. Enforce spellcheck settings
@@ -17873,7 +18190,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     } else if (otpField && otpField.offsetParent !== null) {
                                         executeRecoveryStepTwoSubmit();
                                     } else {
-                                        executeSimulatedAuthenticationChallenge();
+                                        executeAuthenticationChallenge();
                                     }
                                 }
                             }
@@ -19013,6 +19330,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         input.value = "";
                         renderDashboardTasks();
                         renderTasksListByMonth();
+                        persistCoreStores();
 
                         // Sync with the main Tasks tab list if its selected date matches today's date
                         if (activeSelectedTasksDate === todayStr) {
@@ -19033,6 +19351,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                         }
                         renderNotesListByMonth();
+                        persistCoreStores();
                     }
                     function renderBroadcasterRolesSelectionConfig() {
                         const container = document.getElementById('broadcasterRolesCheckboxContainer');
@@ -20396,12 +20715,10 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             userItem.onclick = () => selectChatPeer(user.email);
 
                             const initials = user.avatar || user.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
-                            const isOnline = Math.random() > 0.3;
 
                             userItem.innerHTML = `
             <div class="comms-user-avatar" style="background: ${user.accentColor || '#004b87'}22; color: ${user.accentColor || '#004b87'}">
                 ${user.photoUrl ? `<img src="${user.photoUrl}" alt="${user.name}">` : initials}
-                <span class="${isOnline ? 'online-indicator' : 'offline-indicator'}"></span>
             </div>
             <div class="comms-user-info">
                 <div class="comms-user-name">${user.name}</div>
@@ -20600,9 +20917,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 headerName.style.cursor = 'default';
                                 headerName.onclick = null;
 
-                                const isOnline = Math.random() > 0.3;
-                                headerStatus.innerText = isOnline ? 'Online' : 'Offline';
-                                headerStatus.style.color = isOnline ? 'var(--success)' : 'var(--text-muted)';
+                                headerStatus.innerText = 'Availability unavailable';
+                                headerStatus.style.color = 'var(--text-muted)';
                                 headerStatus.style.cursor = 'default';
                                 headerStatus.onclick = null;
 
@@ -20683,6 +20999,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 unreadMessageCounts[chatActivePeerEmail] = 0;
                             }
                         }
+                        persistCoreStores();
                         updateCommsTotalUnread();
                         renderChatUsersList();
                     }
@@ -20886,6 +21203,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         populateChatUserList();
                         updateTotalUnreadBadge();
+                        persistCoreStores();
 
                         if (isGroupChat) {
                             renderGroupMessages();
@@ -20895,10 +21213,6 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         const window = document.getElementById('chatMessagesWindow');
                         if (window) window.scrollTop = window.scrollHeight;
-
-                        if (!isGroupChat) {
-                            simulatePeerReply(chatActivePeerEmail);
-                        }
                     }
 
                     function handleChatInputKeydown(event) {
@@ -21009,15 +21323,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         let membersHtml = '';
                         group.members.forEach(memberEmail => {
                             const member = globalRosterRepository.find(u => u.email === memberEmail);
-                            const isOnline = Math.random() > 0.3;
                             const initials = member ? (member.avatar || member.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2)) : '??';
                             const displayName = member ? member.name : memberEmail;
 
                             membersHtml += `
             <div style="display:flex; align-items:center; gap:10px; padding:8px; border-radius:6px; background:var(--bg-surface); margin-bottom:4px;">
-                <div style="width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; position:relative;">
+                <div style="width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px;">
                     ${initials}
-                    <span style="position:absolute; bottom:0; right:0; width:10px; height:10px; background:${isOnline ? 'var(--success)' : 'var(--text-muted)'}; border:2px solid var(--bg-card); border-radius:50%;"></span>
                 </div>
                 <div style="flex:1;">
                     <div style="font-weight:700; font-size:11px; color:var(--text-heading);">${displayName}</div>
@@ -21105,6 +21417,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     delete unreadMessageCounts[groupId][memberEmail];
                                 }
                                 customAlert("Member removed from group.");
+                                persistCoreStores();
                                 openGroupInfoPanel(); // Refresh panel
                                 renderChatUsersList();
                             }
@@ -21123,6 +21436,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     document.getElementById('commsEmptyState').style.display = 'flex';
                                 }
                                 customAlert("You have left the group.");
+                                persistCoreStores();
                                 closeSystemModalBox();
                                 renderChatUsersList();
                             }
@@ -21142,6 +21456,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
 
                             customAlert("Group deleted.");
+                            persistCoreStores();
                             closeSystemModalBox();
                             renderChatUsersList();
                         });
@@ -21157,6 +21472,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                         });
 
+                        persistCoreStores();
                         updateTotalUnreadBadge();
                     }
 
@@ -21774,6 +22090,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         showCommsToast(`Group "${name}" created with ${selectedMembers.length} members`, 'success');
                         closeCommsGroupModal();
+                        persistCoreStores();
 
                         switchCommsTab('groups');
                         selectGroupChat(group.id);
@@ -21987,15 +22304,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         let membersHtml = '';
                         group.members.forEach(memberEmail => {
                             const member = globalRosterRepository.find(u => u.email === memberEmail);
-                            const isOnline = Math.random() > 0.3;
                             const initials = member ? (member.avatar || member.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2)) : '??';
                             const displayName = member ? member.name : memberEmail;
 
                             membersHtml += `
             <div style="display:flex; align-items:center; gap:10px; padding:8px; border-radius:6px; background:var(--bg-surface); margin-bottom:4px;">
-                <div style="width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; position:relative;">
+                <div style="width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px;">
                     ${initials}
-                    <span style="position:absolute; bottom:0; right:0; width:10px; height:10px; background:${isOnline ? 'var(--success)' : 'var(--text-muted)'}; border:2px solid var(--bg-card); border-radius:50%;"></span>
                 </div>
                 <div style="flex:1;">
                     <div style="font-weight:700; font-size:11px; color:var(--text-heading);">${displayName}</div>
