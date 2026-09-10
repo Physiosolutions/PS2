@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const FROM_EMAIL = process.env.OTP_FROM_EMAIL || 'PS Family <password-reset@psfamily.vercel.app>';
+const FROM_EMAIL = process.env.OTP_FROM_EMAIL || 'PS Family <onboarding@resend.dev>';
 const SECRET = process.env.OTP_SECRET || RESEND_API_KEY || 'dev-only-insecure-secret';
 const OTP_TTL_MS = 10 * 60 * 1000;
 const MAX_SENDS = 3;

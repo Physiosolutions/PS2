@@ -48,5 +48,10 @@ Vercel serverless function. Set two environment variables in **Vercel → Projec
 | `OTP_FROM_EMAIL` | No | Verified sender, e.g. `"PS Family" <reset@yourdomain.mv>`. Defaults to the Resend sandbox sender (`onboarding@resend.dev`). |
 | `OTP_SECRET` | No | Optional secret used to sign the OTP token. Defaults to `RESEND_API_KEY`. |
 
-Free Resend tier covers 100 emails/day — enough for staff password resets. After adding the env
-vars, redeploy (a push to `main` triggers it automatically).
+Free Resend tier covers 100 emails/day — enough for staff password resets.
+
+> ⚠️ Resend's sandbox sender (`onboarding@resend.dev`) only delivers to accounts/recipients
+> verified in your Resend dashboard. To email real staff inboxes, verify your own domain
+> (Resend → Domains) and set `OTP_FROM_EMAIL` to an address on it, e.g. `"PS Family" <reset@yourdomain.mv>`.
+
+After adding the env vars, redeploy (a push to `main` triggers it automatically).
