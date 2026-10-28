@@ -1,0 +1,31 @@
+# Physio Cloud — Cloudflare Worker (D1 + R2 + KV)
+# Docs: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "physio-cloud"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# --- D1: text / records ------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "physio-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# --- R2: photos / files ------------------------------------------------
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "physio-photos"
+
+# --- KV: small config / hot cache --------------------------------------
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+# Comma-separated browser origins allowed to call this API.
+# Add your Vercel preview domains if you test on them.
+ALLOWED_ORIGINS = "https://psfamily.vercel.app,http://localhost:8080,http://127.0.0.1:8080"
+SESSION_TTL_DAYS = "30"
+
+# BOOTSTRAP_SECRET is a secret — do NOT put it here.
+# Set it with: wrangler secret put BOOTSTRAP_SECRET

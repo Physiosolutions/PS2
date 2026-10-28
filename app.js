@@ -1736,7 +1736,10 @@
                         try { localStorage.setItem('physioCustomTableSequences', JSON.stringify(customTableSequences)); } catch (e) { }
                         try { localStorage.setItem('physioSystemAlertLogs', JSON.stringify(systemAlertLogs)); } catch (e) { }
                         try { localStorage.setItem('physioLoginSessionLogs', JSON.stringify(globalLoginLogsRepository)); } catch (e) { }
+                        try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.scheduleSync(); } catch (e) { }
                     }
+                    window.__loadCoreStores = loadCoreStores;
+                    window.__persistCoreStores = persistCoreStores;
                     function loadCoreStores() {
                         try {
                             const _f = localStorage.getItem('physioFollowupCasesRepository');
@@ -5552,6 +5555,7 @@
                             return;
                         }
                         currentActiveSessionUser = userObject;
+                        try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
                         syncPatientTrackerVisibility();
                         document.getElementById('authContainer').classList.add('hidden');
                         document.getElementById('authContainerSplit').classList.add('hidden');
