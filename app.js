@@ -18575,17 +18575,34 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         if (!pc) { psCloudNotify('Cloud module is not loaded.'); return; }
                         const st = pc.status();
                         if (!st.enabled) { psCloudNotify('Cloud storage is turned off on this device. Use "Save & Reconnect" first.'); return; }
-                        if (!st.signedIn) { psCloudNotify('Sign out and log in again to connect this device to the cloud.'); return; }
-                        pc.pullAll().then(function (changed) {
-                            if (changed) {
-                                psCloudNotify('This device received newer cloud records. Reloading…');
-                                setTimeout(function () { location.reload(); }, 800);
+
+                        const run = function () {
+                            pc.pullAll().then(function (changed) {
+                                if (changed) {
+                                    psCloudNotify('This device received newer cloud records. Reloading…');
+                                    setTimeout(function () { location.reload(); }, 800);
+                                    return;
+                                }
+                                return pc.flush().then(function (ok) {
+                                    psCloudNotify(ok ? 'Sync complete — everything is up to date.' : 'Nothing needed uploading, or the server refused the request.');
+                                    renderCloudStoragePanel();
+                                });
+                            });
+                        };
+
+                        if (st.signedIn) { run(); return; }
+
+                        const user = (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) ? currentActiveSessionUser : null;
+                        if (!user || !user.password) {
+                            psCloudNotify('Sign out and log in again to connect this device to the cloud.');
+                            return;
+                        }
+                        pc.login(user.email, user.password).then(function (ok) {
+                            if (!ok) {
+                                psCloudNotify('The cloud did not recognise this account. Upload the staff accounts first.');
                                 return;
                             }
-                            return pc.flush().then(function (ok) {
-                                psCloudNotify(ok ? 'Sync complete — everything is up to date.' : 'Nothing needed uploading, or the server refused the request.');
-                                renderCloudStoragePanel();
-                            });
+                            run();
                         });
                     }
 
@@ -18605,7 +18622,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             if (data && data.ok) {
                                 if (input) input.value = '';
                                 if (result) result.textContent = '✅ ' + (data.seeded || 0) + ' staff accounts created in the cloud.';
-                                psCloudNotify((data.seeded || 0) + ' staff accounts uploaded.\n\nThe setup key can now be rotated.\n\nSign out and log in again to start syncing.');
+                                // Connect this device immediately instead of asking for another login.
+                                try {
+                                    const user = (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) ? currentActiveSessionUser : null;
+                                    if (user && user.password) pc.onLocalLogin(user.email, user.password);
+                                } catch (e) { }
+                                psCloudNotify((data.seeded || 0) + ' staff accounts uploaded.\n\nCloud sync is starting now. The setup key can be rotated and deleted.');
+                                setTimeout(renderCloudStoragePanel, 1500);
                             } else {
                                 const err = (data && data.error) ? data.error : 'Unknown error';
                                 if (result) result.textContent = '❌ ' + err;
