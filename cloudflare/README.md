@@ -10,6 +10,10 @@ Cloud storage for the PS2 portal. The site stays on Vercel; this Worker is the A
 
 > KV is **not** used for records — its free tier allows only ~1,000 writes/day.
 
+> **R2 needs a one-time dashboard activation** (Cloudflare asks for a payment
+> method even on the free tier). Until then photo uploads return 503 and photos
+> stay inside the app's local storage; all text records still sync normally.
+
 ## Live deployment
 
 | | |
