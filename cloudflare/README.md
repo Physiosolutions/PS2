@@ -59,31 +59,27 @@ curl -X POST https://physio-cloud.psfamily.workers.dev/auth/bootstrap \
 
 Passwords are stored as **PBKDF2-SHA256** hashes — never plain text.
 
-## 3. Import existing staff accounts (one time)
+## 3. Upload the staff accounts (one time, from the main computer)
 
-In the app's browser console (logged in, so the roster is loaded):
+The cloud address is built into `cloud-sync.js`, so there is nothing to type in
+a console. In the app:
 
-```js
-PhysioCloud.seedFromRoster('YOUR_BOOTSTRAP_SECRET')
-```
+1. **Administrative Core → ☁️ Cloud Storage**
+2. Paste the setup key (the `BOOTSTRAP_SECRET`) and press **Upload Staff Accounts**
+3. Sign out and log back in
 
-This hashes and uploads every staff account from `physioStaffDirectoryRepository`.
+From that login onward:
 
-## 4. Turn on sync in the app
-
-In the browser console (once per device):
-
-```js
-PhysioCloud.configure({ baseUrl: 'https://physio-cloud.psfamily.workers.dev' });
-```
-
-The page reloads. From then on:
-
-- logging in also signs in to the Worker,
+- the device signs in to the Worker as well as the app,
+- the first connection merges safely (server wins for existing records, local-only
+  records are uploaded — nothing local is thrown away),
 - `persistCoreStores()` pushes changed stores automatically (debounced),
 - the first load of a session pulls cloud changes and reloads once.
 
-Nothing is enabled until `baseUrl` is configured, so the site keeps working on localStorage in the meantime.
+Rotate the setup key afterwards with `wrangler secret put BOOTSTRAP_SECRET`; each
+device stays signed in because it uses a bearer token, not the key.
+
+To turn sync off on one browser only: **Cloud Storage → ⛔ Turn Off On This Device**.
 
 ---
 
@@ -97,6 +93,7 @@ Nothing is enabled until `baseUrl` is configured, so the site keeps working on l
 | POST | `/auth/login` | – | returns bearer token |
 | POST | `/auth/logout` | bearer | revoke session |
 | GET | `/auth/me` | bearer | current user |
+| GET | `/stats` | bearer | account/record/photo counts |
 | GET | `/sync` | bearer | pull records |
 | POST | `/sync` | bearer | push records (last-write-wins) |
 | POST | `/photos` | bearer | upload to R2 |

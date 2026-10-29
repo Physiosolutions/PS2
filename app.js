@@ -14409,6 +14409,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 el.closest('style') ||
                                 el.id === 'rosterDraftStatusBadge' ||
                                 el.id === 'systemGlobalModalMount' ||
+                                el.closest('#admin_sub_cloud') ||
                                 el.closest('#fullscreenDictionaryGridAnchor') ||
                                 el.closest('#dictionaryMiniSearch')
                             ) {
@@ -14451,6 +14452,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const inputElements = document.querySelectorAll('input[placeholder], textarea[placeholder]');
                         inputElements.forEach(input => {
                             if (input.id === 'dictionaryMiniSearch') {
+                                return;
+                            }
+                            if (input.closest('#admin_sub_cloud')) {
                                 return;
                             }
                             const rawPlaceholder = input.getAttribute('placeholder');
@@ -18460,6 +18464,177 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     // Clock interval is started after DOM is ready (see DOMContentLoaded below)
 
                     // Dynamic Sub-Tab Switching Logic for Administrative Core
+                    /* ================= CLOUD STORAGE PANEL ================= */
+
+                    function psCloudApi() {
+                        return (typeof window !== 'undefined' && window.PhysioCloud) ? window.PhysioCloud : null;
+                    }
+
+                    function psCloudNotify(message) {
+                        try {
+                            if (typeof customAlert === 'function') { customAlert(message); return; }
+                        } catch (e) { }
+                        try { alert(message); } catch (e) { }
+                    }
+
+                    function psCloudFormatTime(ts) {
+                        if (!ts) return 'never';
+                        try { return new Date(ts).toLocaleString(); } catch (e) { return String(ts); }
+                    }
+
+                    function renderCloudStoragePanel() {
+                        const pc = psCloudApi();
+                        const badge = document.getElementById('cloudStatusBadge');
+                        const urlEl = document.getElementById('cloudStatusUrl');
+                        const pendingEl = document.getElementById('cloudStatusPending');
+                        const noteEl = document.getElementById('cloudStatusNote');
+                        const urlInput = document.getElementById('cloudBaseUrlInput');
+
+                        if (!pc) {
+                            if (badge) {
+                                badge.textContent = 'Cloud module not loaded';
+                                badge.className = 'cloud-badge cloud-badge-off';
+                            }
+                            return;
+                        }
+
+                        const st = pc.status();
+                        if (urlInput && !urlInput.value) urlInput.value = st.baseUrl || '';
+                        if (urlEl) urlEl.textContent = st.baseUrl || '—';
+
+                        if (badge) {
+                            if (!st.enabled) {
+                                badge.textContent = '⛔ Off on this device';
+                                badge.className = 'cloud-badge cloud-badge-off';
+                            } else if (!st.signedIn) {
+                                badge.textContent = '⚡ Ready — sign out and back in';
+                                badge.className = 'cloud-badge cloud-badge-warn';
+                            } else {
+                                badge.textContent = '✅ Connected';
+                                badge.className = 'cloud-badge cloud-badge-on';
+                            }
+                        }
+
+                        if (pendingEl) {
+                            pendingEl.textContent = st.signedIn
+                                ? (st.pending ? st.pending + ' change(s) waiting' : 'Everything uploaded')
+                                : 'Not signed in to cloud';
+                        }
+
+                        if (noteEl) {
+                            const parts = [];
+                            parts.push('Last upload: ' + psCloudFormatTime(st.lastPush));
+                            parts.push('Last download: ' + psCloudFormatTime(st.lastPull));
+                            if (st.lastMerge) parts.push('First connection: ' + st.lastMerge);
+                            if (st.lastError) parts.push('⚠ ' + st.lastError + ' (' + psCloudFormatTime(st.lastErrorAt) + ')');
+                            noteEl.textContent = parts.join('  ·  ');
+                        }
+
+                        refreshCloudStats();
+                    }
+
+                    function refreshCloudStats() {
+                        const grid = document.getElementById('cloudStatGrid');
+                        const pc = psCloudApi();
+                        if (!grid) return;
+                        if (!pc) { grid.innerHTML = ''; return; }
+                        const st = pc.status();
+                        if (!st.enabled) {
+                            grid.innerHTML = '<div class="cloud-stat"><span class="cloud-stat-label">State</span><strong>Turned off on this device</strong></div>';
+                            return;
+                        }
+                        if (!st.signedIn) {
+                            grid.innerHTML = '<div class="cloud-stat"><span class="cloud-stat-label">State</span><strong>Waiting for a login</strong></div>';
+                            return;
+                        }
+                        grid.innerHTML = '<div class="cloud-stat"><span class="cloud-stat-label">Server</span><strong>Loading…</strong></div>';
+                        pc.stats().then(function (data) {
+                            if (!data || !data.ok) {
+                                grid.innerHTML = '<div class="cloud-stat"><span class="cloud-stat-label">Server</span><strong>Unavailable</strong></div>';
+                                return;
+                            }
+                            const cells = [
+                                ['Staff accounts', data.users],
+                                ['Record stores', data.records],
+                                ['Photos', data.r2 ? data.photos : 'R2 not enabled'],
+                                ['Last saved', psCloudFormatTime(data.lastUpdated)],
+                                ['Storage', data.storage]
+                            ];
+                            grid.innerHTML = cells.map(function (c) {
+                                return '<div class="cloud-stat"><span class="cloud-stat-label">' + c[0] + '</span><strong>' + c[1] + '</strong></div>';
+                            }).join('');
+                        });
+                    }
+
+                    function cloudSyncNow() {
+                        const pc = psCloudApi();
+                        if (!pc) { psCloudNotify('Cloud module is not loaded.'); return; }
+                        const st = pc.status();
+                        if (!st.enabled) { psCloudNotify('Cloud storage is turned off on this device. Use "Save & Reconnect" first.'); return; }
+                        if (!st.signedIn) { psCloudNotify('Sign out and log in again to connect this device to the cloud.'); return; }
+                        pc.pullAll().then(function (changed) {
+                            if (changed) {
+                                psCloudNotify('This device received newer cloud records. Reloading…');
+                                setTimeout(function () { location.reload(); }, 800);
+                                return;
+                            }
+                            return pc.flush().then(function (ok) {
+                                psCloudNotify(ok ? 'Sync complete — everything is up to date.' : 'Nothing needed uploading, or the server refused the request.');
+                                renderCloudStoragePanel();
+                            });
+                        });
+                    }
+
+                    function cloudSeedStaffAccounts() {
+                        const pc = psCloudApi();
+                        const input = document.getElementById('cloudSetupKeyInput');
+                        const result = document.getElementById('cloudSeedResult');
+                        if (!pc) { psCloudNotify('Cloud module is not loaded.'); return; }
+                        const key = (input && input.value ? input.value : '').trim();
+                        if (!key) {
+                            psCloudNotify('Paste the one-time setup key first.');
+                            if (input) input.focus();
+                            return;
+                        }
+                        if (result) result.textContent = 'Uploading staff accounts…';
+                        pc.seedFromRoster(key).then(function (data) {
+                            if (data && data.ok) {
+                                if (input) input.value = '';
+                                if (result) result.textContent = '✅ ' + (data.seeded || 0) + ' staff accounts created in the cloud.';
+                                psCloudNotify((data.seeded || 0) + ' staff accounts uploaded.\n\nThe setup key can now be rotated.\n\nSign out and log in again to start syncing.');
+                            } else {
+                                const err = (data && data.error) ? data.error : 'Unknown error';
+                                if (result) result.textContent = '❌ ' + err;
+                                psCloudNotify('Upload failed: ' + err);
+                            }
+                        }).catch(function (err) {
+                            if (result) result.textContent = '❌ ' + String(err && err.message || err);
+                            psCloudNotify('Upload failed: ' + String(err && err.message || err));
+                        });
+                    }
+
+                    function cloudSaveBaseUrl() {
+                        const pc = psCloudApi();
+                        const input = document.getElementById('cloudBaseUrlInput');
+                        if (!pc) { psCloudNotify('Cloud module is not loaded.'); return; }
+                        const url = (input && input.value ? input.value : '').trim().replace(/\/+$/, '');
+                        if (!/^https?:\/\/[^\s]+$/i.test(url)) {
+                            psCloudNotify('Enter a valid address starting with https://');
+                            return;
+                        }
+                        pc.configure({ baseUrl: url });
+                    }
+
+                    function cloudDisableOnDevice() {
+                        const pc = psCloudApi();
+                        if (!pc) { psCloudNotify('Cloud module is not loaded.'); return; }
+                        const run = function () { pc.disable(); };
+                        try {
+                            if (typeof customConfirm === 'function') { customConfirm('Turn off cloud storage on this browser only?', run); return; }
+                        } catch (e) { }
+                        if (confirm('Turn off cloud storage on this browser only?')) run();
+                    }
+
                     function switchAdminHubSubTab(tabName) {
                         // Hide all sub-tab contents
                         document.querySelectorAll('.admin-sub-tab-content').forEach(el => {
@@ -18504,6 +18679,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             if (tabName === 'clinical') {
                                 setTimeout(populateAasandhaInlineConfig, 50);
                                 setTimeout(populateDischargeInlineConfig, 80);
+                            }
+                            if (tabName === 'cloud') {
+                                setTimeout(renderCloudStoragePanel, 50);
                             }
 
                         }

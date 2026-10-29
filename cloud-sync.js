@@ -1,23 +1,29 @@
 /**
  * Physio Cloud — browser sync adapter
  * ------------------------------------
- * Mirrors the app's localStorage stores to a Cloudflare Worker
+ * Mirrors the app's localStorage stores to the Cloudflare Worker
  * (D1 for text/records, R2 for photos, KV for small config).
  *
- * SAFE BY DEFAULT: if no baseUrl is configured this file does nothing.
+ * The API URL is built in, so sync is on by default. It is completely
+ * passive when the device has no cloud session yet: no token means no
+ * network calls, and the app keeps working from localStorage.
  *
- * Enable it once (per device) from the browser console:
- *   PhysioCloud.configure({ baseUrl: 'https://physio-cloud.<your-subdomain>.workers.dev' })
- *
- * On the next login the adapter signs in against the Worker and starts syncing.
+ * Manual controls (normally used from Administrative Core > Cloud Storage):
+ *   PhysioCloud.configure({ baseUrl: 'https://...' })   // change endpoint
+ *   PhysioCloud.disable()                               // turn off on this device
+ *   PhysioCloud.seedFromRoster(setupKey)                // upload staff accounts
+ *   PhysioCloud.pullAll() / .flush() / .stats()
  */
 (function () {
   'use strict';
 
+  var DEFAULT_BASE_URL = 'https://physio-cloud.psfamily.workers.dev';
+
   var KEY_CFG = 'physioCloudConfig';
   var KEY_TOKEN = 'physioCloudToken';
   var KEY_META = 'physioCloudMeta';      // key -> last known server timestamp
-  var KEY_PUSHED = 'physioCloudPushed';  // key -> last value successfully pushed
+  var KEY_PUSHED = 'physioCloudPushed';  // key -> hash of last value pushed
+  var KEY_STATE = 'physioCloudState';    // small status record
   var PULL_FLAG = 'physioCloudPulledOnce';
 
   // Which localStorage keys belong to the app and should be synced.
@@ -36,15 +42,26 @@
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* quota */ }
   }
 
-  var cfg = readJson(KEY_CFG, {});
+  // Fast non-cryptographic hash so we can tell "unchanged" without keeping a
+  // second full copy of every store in localStorage.
+  function hash(text) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return text.length.toString(36) + ':' + h.toString(36);
+  }
+
+  var cfg = readJson(KEY_CFG, {}) || {};
   if (window.PHYSIO_CLOUD) {
     for (var k in window.PHYSIO_CLOUD) {
       if (Object.prototype.hasOwnProperty.call(window.PHYSIO_CLOUD, k)) cfg[k] = window.PHYSIO_CLOUD[k];
     }
   }
 
-  var baseUrl = String(cfg.baseUrl || '').replace(/\/+$/, '');
-  var enabled = !!baseUrl;
+  var baseUrl = String(cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  var enabled = !!baseUrl && cfg.disabled !== true;
   var token = localStorage.getItem(KEY_TOKEN) || '';
   var timer = null;
   var inFlight = false;
@@ -77,30 +94,33 @@
     return out;
   }
 
+  function note(label, detail) {
+    var state = readJson(KEY_STATE, {}) || {};
+    state[label] = Date.now();
+    if (detail !== undefined) state[label + 'Detail'] = detail;
+    writeJson(KEY_STATE, state);
+  }
+
+  function reloadOnce() {
+    if (reloading) return;
+    reloading = true;
+    try { location.reload(); } catch (e) { /* ignore */ }
+  }
+
   function scheduleSync() {
     if (!enabled) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(function () { timer = null; flush(); }, 1800);
   }
 
-  function flush() {
-    if (!enabled || !token || inFlight) return Promise.resolve(false);
-    var pushed = readJson(KEY_PUSHED, {});
-    var meta = readJson(KEY_META, {});
-    var now = Date.now();
-    var entries = [];
+  /* ---------------- push ---------------- */
 
-    localKeys().forEach(function (key) {
-      var value = localStorage.getItem(key);
-      if (value == null) return;
-      if (pushed[key] === value) return;              // unchanged since last push
-      meta[key] = now;
-      entries.push({ key: key, value: value, updatedAt: now });
-    });
-
-    if (!entries.length) return Promise.resolve(false);
-
-    inFlight = true;
+  function pushEntries(entries, meta, pushed) {
+    if (!entries.length) {
+      writeJson(KEY_META, meta);
+      writeJson(KEY_PUSHED, pushed);
+      return Promise.resolve(true);
+    }
     var chunks = [];
     for (var i = 0; i < entries.length; i += 25) chunks.push(entries.slice(i, i + 25));
 
@@ -114,22 +134,49 @@
         }).then(function (res) {
           if (res.status === 401) { clearToken(); return false; }
           if (!res.ok) return false;
-          chunk.forEach(function (e) { pushed[e.key] = e.value; });
+          chunk.forEach(function (e) {
+            pushed[e.key] = hash(e.value);
+            meta[e.key] = e.updatedAt;
+          });
           return true;
         });
       });
     }, Promise.resolve(true)).then(function (ok) {
-      inFlight = false;
       if (ok) {
-        writeJson(KEY_PUSHED, pushed);
         writeJson(KEY_META, meta);
+        writeJson(KEY_PUSHED, pushed);
+        note('lastPush');
+      } else {
+        note('lastError', 'push failed');
       }
       return ok;
-    }).catch(function () {
-      inFlight = false;
-      return false;
     });
   }
+
+  function flush() {
+    if (!enabled || !token || inFlight) return Promise.resolve(false);
+    var pushed = readJson(KEY_PUSHED, {}) || {};
+    var meta = readJson(KEY_META, {}) || {};
+    var now = Date.now();
+    var entries = [];
+
+    localKeys().forEach(function (key) {
+      var value = localStorage.getItem(key);
+      if (value == null) return;
+      if (pushed[key] === hash(value)) return;              // unchanged since last push
+      meta[key] = now;
+      entries.push({ key: key, value: value, updatedAt: now });
+    });
+
+    if (!entries.length) return Promise.resolve(true);
+
+    inFlight = true;
+    return pushEntries(entries, meta, pushed)
+      .then(function (ok) { inFlight = false; return ok; })
+      .catch(function () { inFlight = false; note('lastError', 'push network error'); return false; });
+  }
+
+  /* ---------------- pull ---------------- */
 
   function pullAll() {
     if (!enabled || !token) return Promise.resolve(false);
@@ -141,8 +188,8 @@
       })
       .then(function (data) {
         if (!data || !data.entries) return false;
-        var meta = readJson(KEY_META, {});
-        var pushed = readJson(KEY_PUSHED, {});
+        var meta = readJson(KEY_META, {}) || {};
+        var pushed = readJson(KEY_PUSHED, {}) || {};
         var changed = false;
         data.entries.forEach(function (entry) {
           if (!isSyncKey(entry.key)) return;
@@ -151,7 +198,7 @@
           if (serverTs > localTs) {
             try { localStorage.setItem(entry.key, entry.value); } catch (e) { return; }
             meta[entry.key] = serverTs;
-            pushed[entry.key] = entry.value;
+            pushed[entry.key] = hash(entry.value);
             changed = true;
           }
         });
@@ -159,10 +206,64 @@
           writeJson(KEY_META, meta);
           writeJson(KEY_PUSHED, pushed);
         }
+        note('lastPull');
         return changed;
       })
-      .catch(function () { return false; });
+      .catch(function () { note('lastError', 'pull network error'); return false; });
   }
+
+  /**
+   * First time this device talks to the cloud.
+   * The server is authoritative for keys it already has; keys that exist only
+   * on this device are uploaded so nothing local is thrown away.
+   */
+  function firstContactMerge() {
+    if (!enabled || !token) return Promise.resolve(false);
+    return fetch(baseUrl + '/sync', { headers: authHeaders() })
+      .then(function (res) {
+        if (res.status === 401) { clearToken(); return null; }
+        return res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        if (!data || !data.entries) return false;
+        var meta = {};
+        var pushed = {};
+        var serverKeys = {};
+        var changed = false;
+
+        data.entries.forEach(function (entry) {
+          if (!isSyncKey(entry.key)) return;
+          serverKeys[entry.key] = true;
+          meta[entry.key] = Number(entry.updated_at) || 0;
+          pushed[entry.key] = hash(entry.value);
+          try {
+            if (localStorage.getItem(entry.key) !== entry.value) {
+              localStorage.setItem(entry.key, entry.value);
+              changed = true;
+            }
+          } catch (e) { /* quota */ }
+        });
+
+        var now = Date.now();
+        var uploads = [];
+        localKeys().forEach(function (key) {
+          if (serverKeys[key]) return;
+          var value = localStorage.getItem(key);
+          if (value == null) return;
+          meta[key] = now;
+          uploads.push({ key: key, value: value, updatedAt: now });
+        });
+
+        return pushEntries(uploads, meta, pushed).then(function (ok) {
+          note('firstMerge', changed ? 'pulled' : (uploads.length ? 'uploaded ' + uploads.length : 'clean'));
+          if (changed) { reloadOnce(); return true; }
+          return ok;
+        });
+      })
+      .catch(function () { note('lastError', 'first merge failed'); return false; });
+  }
+
+  /* ---------------- auth ---------------- */
 
   function setToken(value) {
     token = value || '';
@@ -187,6 +288,7 @@
       return res.json().then(function (data) {
         if (!data || !data.token) return false;
         setToken(data.token);
+        note('lastLogin');
         return true;
       });
     }).catch(function () { return false; });
@@ -197,9 +299,10 @@
     if (!enabled || !email || !password) return;
     login(email, password).then(function (ok) {
       if (!ok) return;
-      // Pull first so a fresh device adopts cloud data instead of overwriting it.
+      var known = readJson(KEY_PUSHED, null);
+      if (!known) return firstContactMerge();
       pullAll().then(function (changed) {
-        if (changed) { location.reload(); return; }
+        if (changed) { reloadOnce(); return; }
         flush().then(function () { scheduleSync(); });
       });
     }).catch(function () { /* silent */ });
@@ -214,14 +317,96 @@
     clearToken();
   }
 
+  /* ---------------- config / admin ---------------- */
+
   function configure(options) {
-    var next = readJson(KEY_CFG, {});
+    var next = readJson(KEY_CFG, {}) || {};
     for (var key in options) {
       if (Object.prototype.hasOwnProperty.call(options, key)) next[key] = options[key];
     }
+    delete next.disabled;
     writeJson(KEY_CFG, next);
     try { sessionStorage.removeItem(PULL_FLAG); } catch (e) { /* ignore */ }
     if (options && options.reload !== false) location.reload();
+  }
+
+  function disable() {
+    var next = readJson(KEY_CFG, {}) || {};
+    next.disabled = true;
+    writeJson(KEY_CFG, next);
+    clearToken();
+    try { localStorage.removeItem(KEY_PUSHED); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(KEY_META); } catch (e) { /* ignore */ }
+    if (typeof location !== 'undefined') location.reload();
+  }
+
+  /**
+   * Seed every staff account from the locally stored roster.
+   * Usage: PhysioCloud.seedFromRoster('<setup key>')
+   */
+  function seedFromRoster(setupKey) {
+    if (!enabled) return Promise.resolve({ ok: false, error: 'Cloud sync is turned off on this device' });
+    var roster = readJson('physioStaffDirectoryRepository', []);
+    if (!Array.isArray(roster) || !roster.length) {
+      return Promise.resolve({ ok: false, error: 'No staff roster found on this device' });
+    }
+    var users = roster.filter(function (u) {
+      return u && u.email && u.password;
+    }).map(function (u) {
+      return {
+        email: u.email,
+        password: u.password,
+        role: u.position,
+        active: u.active !== false,
+        data: { name: u.name, phone: u.phone, department: u.department }
+      };
+    });
+    if (!users.length) return Promise.resolve({ ok: false, error: 'No staff accounts with email + password found' });
+    return fetch(baseUrl + '/auth/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Secret': String(setupKey || '') },
+      body: JSON.stringify({ users: users })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (data && data.ok) data.seeded = users.length;
+        if (!res.ok && data && !data.error) data.error = 'HTTP ' + res.status;
+        return data;
+      });
+    }).catch(function (err) {
+      return { ok: false, error: 'Network error: ' + String((err && err.message) || err) };
+    });
+  }
+
+  function stats() {
+    if (!enabled || !token) return Promise.resolve(null);
+    return fetch(baseUrl + '/stats', { headers: authHeaders() })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .catch(function () { return null; });
+  }
+
+  function status() {
+    var state = readJson(KEY_STATE, {}) || {};
+    var pending = 0;
+    if (enabled && token) {
+      var pushed = readJson(KEY_PUSHED, {}) || {};
+      localKeys().forEach(function (key) {
+        var value = localStorage.getItem(key);
+        if (value == null) return;
+        if (pushed[key] !== hash(value)) pending++;
+      });
+    }
+    return {
+      configured: !!baseUrl,
+      enabled: enabled,
+      baseUrl: baseUrl,
+      signedIn: !!token,
+      pending: pending,
+      lastPush: state.lastPush || 0,
+      lastPull: state.lastPull || 0,
+      lastMerge: state.firstMergeDetail || '',
+      lastError: state.lastError || '',
+      lastErrorAt: state.lastErrorAt || 0
+    };
   }
 
   /**
@@ -261,45 +446,9 @@
     if (!alreadyPulled) {
       try { sessionStorage.setItem(PULL_FLAG, '1'); } catch (e) { /* ignore */ }
       pullAll().then(function (changed) {
-        if (changed && !reloading) {
-          reloading = true;
-          location.reload();
-        }
+        if (changed) reloadOnce();
       }).catch(function () { /* ignore */ });
     }
-  }
-
-  /**
-   * Seed every staff account from the locally stored roster.
-   * Usage: PhysioCloud.seedFromRoster('<bootstrap-secret>')
-   */
-  function seedFromRoster(bootstrapSecret) {
-    if (!enabled) return Promise.resolve({ ok: false, error: 'Cloud is not configured yet' });
-    var roster = readJson('physioStaffDirectoryRepository', []);
-    if (!Array.isArray(roster) || !roster.length) {
-      return Promise.resolve({ ok: false, error: 'No staff roster found on this device' });
-    }
-    var users = roster.filter(function (u) {
-      return u && u.email && u.password;
-    }).map(function (u) {
-      return {
-        email: u.email,
-        password: u.password,
-        role: u.position,
-        active: u.active !== false,
-        data: { name: u.name, phone: u.phone, department: u.department }
-      };
-    });
-    return fetch(baseUrl + '/auth/seed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Secret': String(bootstrapSecret || '') },
-      body: JSON.stringify({ users: users })
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        if (data && data.ok) data.seeded = users.length;
-        return data;
-      });
-    });
   }
 
   window.PhysioCloud = {
@@ -307,14 +456,18 @@
     get baseUrl() { return baseUrl; },
     get token() { return token; },
     configure: configure,
+    disable: disable,
     login: login,
     onLocalLogin: onLocalLogin,
     logout: logout,
     pullAll: pullAll,
     flush: flush,
     scheduleSync: scheduleSync,
+    firstContactMerge: firstContactMerge,
     uploadPhoto: uploadPhoto,
     seedFromRoster: seedFromRoster,
+    stats: stats,
+    status: status,
     isSyncKey: isSyncKey
   };
 })();

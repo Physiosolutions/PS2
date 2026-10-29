@@ -5302,3 +5302,70 @@ padding: 10px 16px !important;
         flex-wrap: wrap !important;
     }
 }
+
+/* ---------- Cloud Storage panel (Administrative Core) ---------- */
+.cloud-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--bg-inner);
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.cloud-badge-on {
+    color: #0a7d3f;
+    border-color: rgba(10, 125, 63, 0.35);
+    background: rgba(10, 125, 63, 0.10);
+}
+
+.cloud-badge-warn {
+    color: #8a6100;
+    border-color: rgba(138, 97, 0, 0.35);
+    background: rgba(138, 97, 0, 0.10);
+}
+
+.cloud-badge-off {
+    color: #b3261e;
+    border-color: rgba(179, 38, 30, 0.35);
+    background: rgba(179, 38, 30, 0.10);
+}
+
+[data-theme="dark"] .cloud-badge-on { color: #6ee7a0; }
+[data-theme="dark"] .cloud-badge-warn { color: #f3d27a; }
+[data-theme="dark"] .cloud-badge-off { color: #ff9b93; }
+
+.cloud-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.cloud-stat {
+    background: var(--bg-inner);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cloud-stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.cloud-stat strong {
+    font-size: 14px;
+    color: var(--text-main);
+    overflow-wrap: anywhere;
+}

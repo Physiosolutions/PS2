@@ -877,6 +877,8 @@
                             <button class="admin-tab-btn" onclick="switchAdminHubSubTab('expiry_config')"
                                 id="btn_admin_tab_expiry_config" data-trans-key="⏰ Expiry Config">⏰ Expiry
                                 Config</button>
+                            <button class="admin-tab-btn" onclick="switchAdminHubSubTab('cloud')"
+                                id="btn_admin_tab_cloud" data-trans-key="☁️ Cloud Storage">☁️ Cloud Storage</button>
                         </div>
                     </div>
 
@@ -1800,6 +1802,71 @@
                                 View</button>
                         </div>
                     </div> <!-- Closes admin_sub_logs sub-tab container -->
+
+                    <!-- SUB-TAB: CLOUD STORAGE (D1 + R2 + KV) -->
+                    <div id="admin_sub_cloud" class="admin-sub-tab-content grid-layout span-12 hidden">
+                        <div class="admin-sub-card span-12">
+                            <h3 class="admin-section-title" data-trans-key="☁️ Cloud Storage — Official Records">
+                                ☁️ Cloud Storage — Official Records</h3>
+                            <p style="color:var(--text-muted); margin-bottom:10px;"
+                                data-trans-key="Records are mirrored to Cloudflare automatically after login. Photos are stored in R2 once it is enabled.">
+                                Records are mirrored to Cloudflare automatically after login. Photos are stored in R2
+                                once it is enabled.</p>
+                            <div id="cloudStatusPanel"
+                                style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                                <span id="cloudStatusBadge" class="cloud-badge cloud-badge-off">Checking…</span>
+                                <span class="cloud-badge" id="cloudStatusUrl">—</span>
+                                <span class="cloud-badge" id="cloudStatusPending">—</span>
+                            </div>
+                            <div class="cloud-stat-grid" id="cloudStatGrid"></div>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                                <button class="action-btn" style="background:var(--primary);"
+                                    onclick="cloudSyncNow()" data-trans-key="🔄 Sync Now">🔄 Sync Now</button>
+                                <button class="action-btn" style="background:var(--bg-inner); color:var(--text-main);"
+                                    onclick="refreshCloudStats()" data-trans-key="📊 Refresh Status">📊 Refresh
+                                    Status</button>
+                            </div>
+                            <p id="cloudStatusNote" style="color:var(--text-muted); font-size:11px; margin-top:8px;"></p>
+                        </div>
+
+                        <div class="admin-sub-card span-12">
+                            <h3 class="admin-section-title" data-trans-key="👥 Upload Staff Accounts to the Cloud">
+                                👥 Upload Staff Accounts to the Cloud</h3>
+                            <p style="color:var(--text-muted); margin-bottom:10px;"
+                                data-trans-key="Creates every staff login in the cloud so any device can sign in. Run this once, then share the setup key and delete it.">
+                                Creates every staff login in the cloud so any device can sign in. Run this once, then
+                                rotate the key and delete it.</p>
+                            <div class="form-group">
+                                <label data-trans-key="One-time Setup Key">One-time Setup Key</label>
+                                <input type="text" id="cloudSetupKeyInput"
+                                    placeholder="Paste the setup key you were given" autocomplete="off" spellcheck="false">
+                            </div>
+                            <button class="action-btn" style="background:var(--success); width:100%; justify-content:center;"
+                                onclick="cloudSeedStaffAccounts()" data-trans-key="☁️ Upload Staff Accounts">
+                                ☁️ Upload Staff Accounts</button>
+                            <p id="cloudSeedResult" style="color:var(--text-muted); font-size:11px; margin-top:8px;"></p>
+                        </div>
+
+                        <div class="admin-sub-card span-12">
+                            <h3 class="admin-section-title" data-trans-key="⚙️ Connection">⚙️ Connection</h3>
+                            <div class="form-group">
+                                <label data-trans-key="Cloud API Address">Cloud API Address</label>
+                                <input type="text" id="cloudBaseUrlInput" spellcheck="false" autocomplete="off">
+                            </div>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button class="action-btn" style="background:var(--primary);"
+                                    onclick="cloudSaveBaseUrl()" data-trans-key="💾 Save &amp; Reconnect">💾 Save &amp;
+                                    Reconnect</button>
+                                <button class="action-btn" style="background:var(--bg-inner); color:var(--danger);"
+                                    onclick="cloudDisableOnDevice()" data-trans-key="⛔ Turn Off On This Device">⛔ Turn
+                                    Off On This Device</button>
+                            </div>
+                            <p style="color:var(--text-muted); font-size:11px; margin-top:8px;"
+                                data-trans-key="Turning cloud storage off only affects this browser. Records already uploaded stay in the cloud.">
+                                Turning cloud storage off only affects this browser. Records already uploaded stay in
+                                the cloud.</p>
+                        </div>
+                    </div>
 
                     <!-- SUB-TAB 5: CLINICAL RULES HUB -->
                     <div id="admin_sub_clinical" class="admin-sub-tab-content grid-layout span-12 hidden">

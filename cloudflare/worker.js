@@ -19,6 +19,7 @@
  *   POST   /auth/login              {email,password}
  *   POST   /auth/logout
  *   GET    /auth/me
+ *   GET    /stats                   counts + storage mode
  *   GET    /sync?since=<ms>         -> {entries:[{key,value,updated_at}]}
  *   POST   /sync                    {entries:[{key,value,updatedAt}]}
  *   POST   /photos                  multipart: file, key?
@@ -124,6 +125,27 @@ async function route(request, env) {
     if (!email) return json({ ok: false, error: 'Unauthorized' }, 401);
     const user = await env.DB.prepare('SELECT email, role, data FROM users WHERE email = ?').bind(email).first();
     return json({ ok: true, user: user ? { email: user.email, role: user.role, data: safeJson(user.data) } : { email } });
+  }
+
+  if (path === '/stats' && method === 'GET') {
+    const email = await currentUser(request, env);
+    if (!email) return json({ ok: false, error: 'Unauthorized' }, 401);
+    const users = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
+    const records = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(updated_at) AS t FROM kv_store').first();
+    let photos = { n: 0 };
+    if (env.PHOTOS) {
+      photos = (await env.DB.prepare('SELECT COUNT(*) AS n FROM photos').first()) || { n: 0 };
+    }
+    return json({
+      ok: true,
+      users: (users && users.n) || 0,
+      records: (records && records.n) || 0,
+      photos: (photos && photos.n) || 0,
+      lastUpdated: (records && records.t) || null,
+      r2: !!env.PHOTOS,
+      storage: 'D1 + KV' + (env.PHOTOS ? ' + R2' : ''),
+      serverTime: Date.now(),
+    });
   }
 
   // ---------- sync (auth required) ----------
