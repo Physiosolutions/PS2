@@ -9,17 +9,19 @@ compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "physio-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "43a81faf-8c37-407e-ac47-a7f455c9cbf1"
 
 # --- R2: photos / files ------------------------------------------------
-[[r2_buckets]]
-binding = "PHOTOS"
-bucket_name = "physio-photos"
+# Requires one-time activation in the Cloudflare dashboard (R2 > Enable).
+# Uncomment once the bucket exists:
+# [[r2_buckets]]
+# binding = "PHOTOS"
+# bucket_name = "physio-photos"
 
 # --- KV: small config / hot cache --------------------------------------
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "54834ec684d7434eac28d446ec808102"
 
 [vars]
 # Comma-separated browser origins allowed to call this API.

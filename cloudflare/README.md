@@ -10,6 +10,15 @@ Cloud storage for the PS2 portal. The site stays on Vercel; this Worker is the A
 
 > KV is **not** used for records — its free tier allows only ~1,000 writes/day.
 
+## Live deployment
+
+| | |
+|---|---|
+| Worker URL | `https://physio-cloud.psfamily.workers.dev` |
+| D1 | `physio-db` (5 tables, APAC) |
+| KV | `CONFIG` |
+| R2 | **pending** — activate R2 in the dashboard, then uncomment the binding and redeploy. Photo routes return 503 until then. |
+
 ---
 
 ## 1. Create the cloud resources
@@ -33,7 +42,7 @@ wrangler deploy
 ```
 
 `wrangler deploy` prints the Worker URL, e.g.
-`https://physio-cloud.your-subdomain.workers.dev`
+`https://physio-cloud.psfamily.workers.dev`
 
 If your Vercel preview domains change, update `ALLOWED_ORIGINS` in `wrangler.toml` and re-deploy.
 
@@ -42,7 +51,7 @@ If your Vercel preview domains change, update `ALLOWED_ORIGINS` in `wrangler.tom
 ## 2. Create the first admin account
 
 ```bash
-curl -X POST https://physio-cloud.your-subdomain.workers.dev/auth/bootstrap \
+curl -X POST https://physio-cloud.psfamily.workers.dev/auth/bootstrap \
   -H "Content-Type: application/json" \
   -H "X-Bootstrap-Secret: YOUR_BOOTSTRAP_SECRET" \
   -d "{\"email\":\"psfamilymv@gmail.com\",\"name\":\"Admin\",\"password\":\"CHOOSE_A_STRONG_PASSWORD\"}"
@@ -55,26 +64,17 @@ Passwords are stored as **PBKDF2-SHA256** hashes — never plain text.
 In the app's browser console (logged in, so the roster is loaded):
 
 ```js
-const roster = JSON.parse(localStorage.getItem('physioStaffDirectoryRepository') || '[]');
-const users = roster.map(u => ({
-  email: u.email,
-  password: u.password,
-  role: u.position,
-  data: { name: u.name, phone: u.phone, department: u.department }
-}));
-fetch('https://physio-cloud.your-subdomain.workers.dev/auth/seed', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Secret': 'YOUR_BOOTSTRAP_SECRET' },
-  body: JSON.stringify({ users })
-}).then(r => r.json()).then(console.log);
+PhysioCloud.seedFromRoster('YOUR_BOOTSTRAP_SECRET')
 ```
+
+This hashes and uploads every staff account from `physioStaffDirectoryRepository`.
 
 ## 4. Turn on sync in the app
 
 In the browser console (once per device):
 
 ```js
-PhysioCloud.configure({ baseUrl: 'https://physio-cloud.your-subdomain.workers.dev' });
+PhysioCloud.configure({ baseUrl: 'https://physio-cloud.psfamily.workers.dev' });
 ```
 
 The page reloads. From then on:

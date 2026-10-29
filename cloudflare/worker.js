@@ -168,6 +168,7 @@ async function route(request, env) {
 
   // ---------- photos ----------
   if (path === '/photos' && method === 'POST') {
+    if (!env.PHOTOS) return json({ ok: false, error: 'R2 is not enabled yet' }, 503);
     const email = await currentUser(request, env);
     if (!email) return json({ ok: false, error: 'Unauthorized' }, 401);
     const form = await request.formData();
@@ -188,6 +189,7 @@ async function route(request, env) {
   }
 
   if (parts[0] === 'photos' && parts.length >= 2) {
+    if (!env.PHOTOS) return json({ ok: false, error: 'R2 is not enabled yet' }, 503);
     const key = parts.slice(1).join('/');
     if (method === 'GET') {
       const obj = await env.PHOTOS.get(key);
@@ -209,6 +211,7 @@ async function route(request, env) {
 
   // ---------- kv config ----------
   if (parts[0] === 'config' && parts.length >= 2) {
+    if (!env.CONFIG) return json({ ok: false, error: 'KV not configured' }, 503);
     const key = parts.slice(1).join('/');
     if (method === 'GET') {
       const value = await env.CONFIG.get(key);

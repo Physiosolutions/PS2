@@ -266,6 +266,39 @@
     }
   }
 
+  /**
+   * Seed every staff account from the locally stored roster.
+   * Usage: PhysioCloud.seedFromRoster('<bootstrap-secret>')
+   */
+  function seedFromRoster(bootstrapSecret) {
+    if (!enabled) return Promise.resolve({ ok: false, error: 'Cloud is not configured yet' });
+    var roster = readJson('physioStaffDirectoryRepository', []);
+    if (!Array.isArray(roster) || !roster.length) {
+      return Promise.resolve({ ok: false, error: 'No staff roster found on this device' });
+    }
+    var users = roster.filter(function (u) {
+      return u && u.email && u.password;
+    }).map(function (u) {
+      return {
+        email: u.email,
+        password: u.password,
+        role: u.position,
+        active: u.active !== false,
+        data: { name: u.name, phone: u.phone, department: u.department }
+      };
+    });
+    return fetch(baseUrl + '/auth/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Secret': String(bootstrapSecret || '') },
+      body: JSON.stringify({ users: users })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (data && data.ok) data.seeded = users.length;
+        return data;
+      });
+    });
+  }
+
   window.PhysioCloud = {
     enabled: enabled,
     get baseUrl() { return baseUrl; },
@@ -278,6 +311,7 @@
     flush: flush,
     scheduleSync: scheduleSync,
     uploadPhoto: uploadPhoto,
+    seedFromRoster: seedFromRoster,
     isSyncKey: isSyncKey
   };
 })();
