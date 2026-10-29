@@ -24,6 +24,7 @@
   var KEY_META = 'physioCloudMeta';      // key -> last known server timestamp
   var KEY_PUSHED = 'physioCloudPushed';  // key -> hash of last value pushed
   var KEY_STATE = 'physioCloudState';    // small status record
+  var KEY_SKIPPED = 'physioCloudSkipped'; // key -> why the server refused it
   var PULL_FLAG = 'physioCloudPulledOnce';
 
   // Which localStorage keys belong to the app and should be synced.
@@ -134,11 +135,28 @@
         }).then(function (res) {
           if (res.status === 401) { clearToken(); return false; }
           if (!res.ok) return false;
-          chunk.forEach(function (e) {
-            pushed[e.key] = hash(e.value);
-            meta[e.key] = e.updatedAt;
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            var skippedMap = readJson(KEY_SKIPPED, {}) || {};
+            var refused = {};
+            ((data && data.skipped) || []).forEach(function (s) {
+              if (!s || !s.key) return;
+              refused[s.key] = true;
+              skippedMap[s.key] = { reason: s.reason || 'refused', bytes: s.bytes || 0, at: Date.now() };
+            });
+            chunk.forEach(function (e) {
+              if (refused[e.key]) {
+                // Store it so we do not retry the same oversized payload forever.
+                pushed[e.key] = hash(e.value);
+                meta[e.key] = e.updatedAt;
+                return;
+              }
+              delete skippedMap[e.key];
+              pushed[e.key] = hash(e.value);
+              meta[e.key] = e.updatedAt;
+            });
+            writeJson(KEY_SKIPPED, skippedMap);
+            return true;
           });
-          return true;
         });
       });
     }, Promise.resolve(true)).then(function (ok) {
@@ -405,7 +423,8 @@
       lastPull: state.lastPull || 0,
       lastMerge: state.firstMergeDetail || '',
       lastError: state.lastError || '',
-      lastErrorAt: state.lastErrorAt || 0
+      lastErrorAt: state.lastErrorAt || 0,
+      skipped: readJson(KEY_SKIPPED, {}) || {}
     };
   }
 

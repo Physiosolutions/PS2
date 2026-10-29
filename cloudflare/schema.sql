@@ -13,6 +13,17 @@ CREATE TABLE IF NOT EXISTS kv_store (
 );
 CREATE INDEX IF NOT EXISTS idx_kv_updated ON kv_store (updated_at);
 
+-- Values larger than one D1 row (1 MB) are split into chunks here.
+-- The kv_store row then holds a pointer: "\u0001v<version>:<chunkCount>".
+CREATE TABLE IF NOT EXISTS kv_chunks (
+  store_key TEXT NOT NULL,
+  version   INTEGER NOT NULL,
+  idx       INTEGER NOT NULL,
+  data      TEXT NOT NULL,
+  PRIMARY KEY (store_key, version, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_kv_chunks_version ON kv_chunks (store_key, version);
+
 -- Server-side accounts (passwords are PBKDF2-SHA256; never stored in plain text).
 CREATE TABLE IF NOT EXISTS users (
   email         TEXT PRIMARY KEY,

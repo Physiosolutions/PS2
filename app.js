@@ -18527,6 +18527,10 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             parts.push('Last download: ' + psCloudFormatTime(st.lastPull));
                             if (st.lastMerge) parts.push('First connection: ' + st.lastMerge);
                             if (st.lastError) parts.push('⚠ ' + st.lastError + ' (' + psCloudFormatTime(st.lastErrorAt) + ')');
+                            const skippedKeys = Object.keys(st.skipped || {});
+                            if (skippedKeys.length) {
+                                parts.push('⚠ ' + skippedKeys.length + ' store(s) could not be uploaded: ' + skippedKeys.join(', '));
+                            }
                             noteEl.textContent = parts.join('  ·  ');
                         }
 

@@ -30,6 +30,10 @@
  */
 
 const MAX_VALUE_BYTES = 900000;
+const CHUNK_CHARS = 500000;
+const CHUNK_BYTES = 800000;
+const MAX_CHUNKED_BYTES = 10 * 1024 * 1024;
+const CHUNK_MARKER = '\u0001chunks:';
 const SYNC_PREFIXES = ['physio', 'psCal', 'roster', 'ptRoster', 'PT'];
 
 export default {
@@ -156,7 +160,8 @@ async function route(request, env) {
     const rows = since > 0
       ? await env.DB.prepare('SELECT key, value, updated_at FROM kv_store WHERE updated_at > ? ORDER BY updated_at ASC').bind(since).all()
       : await env.DB.prepare('SELECT key, value, updated_at FROM kv_store ORDER BY updated_at ASC').all();
-    return json({ ok: true, serverTime: Date.now(), entries: (rows.results || []) });
+    const entries = await expandEntries(env, rows.results || []);
+    return json({ ok: true, serverTime: Date.now(), entries });
   }
 
   if (path === '/sync' && method === 'POST') {
@@ -164,28 +169,54 @@ async function route(request, env) {
     if (!email) return json({ ok: false, error: 'Unauthorized' }, 401);
     const body = await readJson(request);
     const entries = Array.isArray(body.entries) ? body.entries : [];
-    const clean = [];
-    let tooBig = 0;
+    const small = [];
+    const large = [];
+    const skipped = [];
     for (const e of entries) {
       const key = String(e.key || '');
       const value = String(e.value == null ? '' : e.value);
-      if (!key || key.length > 200 || !isSyncKey(key)) continue;
-      if (byteLength(value) > MAX_VALUE_BYTES) { tooBig++; continue; }
-      clean.push({ key, value, updatedAt: parseInt(e.updatedAt, 10) || Date.now() });
+      if (!key || key.length > 200 || !isSyncKey(key)) {
+        skipped.push({ key, reason: 'invalid-key' });
+        continue;
+      }
+      const bytes = byteLength(value);
+      const updatedAt = parseInt(e.updatedAt, 10) || Date.now();
+      if (bytes > MAX_VALUE_BYTES) {
+        if (bytes > MAX_CHUNKED_BYTES) {
+          skipped.push({ key, reason: 'too-large', bytes });
+          continue;
+        }
+        large.push({ key, value, updatedAt, bytes });
+      } else {
+        small.push({ key, value, updatedAt });
+      }
     }
-    for (let i = 0; i < clean.length; i += 50) {
-      const chunk = clean.slice(i, i + 50);
-      const stmts = chunk.map((e) =>
-        env.DB.prepare(
-          `INSERT INTO kv_store (key,value,updated_at,updated_by) VALUES (?,?,?,?)
-           ON CONFLICT(key) DO UPDATE SET
-             value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by
-           WHERE excluded.updated_at >= kv_store.updated_at`
-        ).bind(e.key, e.value, e.updatedAt, email)
-      );
-      await env.DB.batch(stmts);
+
+    // Small values: one row each.
+    let saved = 0;
+    for (let i = 0; i < small.length; i += 25) {
+      const batch = small.slice(i, i + 25);
+      const results = await env.DB.batch(batch.map((e) => kvUpsert(env, e, email)));
+      const applied = batch.filter((e, idx) => results[idx] && results[idx].meta && results[idx].meta.changes > 0);
+      saved += applied.length;
+      if (applied.length) {
+        await env.DB.batch(applied.map((e) => env.DB.prepare('DELETE FROM kv_chunks WHERE store_key = ?').bind(e.key)));
+      }
     }
-    return json({ ok: true, saved: clean.length, skippedTooBig: tooBig });
+
+    // Large values: split into chunks so they still fit.
+    let chunked = 0;
+    for (const e of large) {
+      if (await writeChunked(env, e, email)) chunked++;
+    }
+
+    return json({
+      ok: true,
+      saved: saved + chunked,
+      chunked,
+      skipped,
+      skippedTooBig: skipped.filter((s) => s.reason === 'too-large').length,
+    });
   }
 
   // ---------- photos ----------
@@ -253,6 +284,80 @@ async function route(request, env) {
 }
 
 /* ---------------- helpers ---------------- */
+
+function kvUpsert(env, e, email) {
+  return env.DB.prepare(
+    `INSERT INTO kv_store (key,value,updated_at,updated_by) VALUES (?,?,?,?)
+     ON CONFLICT(key) DO UPDATE SET
+       value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+     WHERE excluded.updated_at >= kv_store.updated_at`
+  ).bind(e.key, e.value, e.updatedAt, email);
+}
+
+function splitIntoChunks(text) {
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + CHUNK_CHARS, text.length);
+    while (end > i && byteLength(text.slice(i, end)) > CHUNK_BYTES) {
+      end = i + Math.floor((end - i) * 0.9);
+    }
+    if (end <= i) end = i + 1;
+    out.push(text.slice(i, end));
+    i = end;
+  }
+  return out;
+}
+
+/** Store a value that is too big for one row, then point kv_store at it. */
+async function writeChunked(env, e, email) {
+  const parts = splitIntoChunks(e.value);
+  const version = e.updatedAt;
+  const marker = `${CHUNK_MARKER}v${version}:${parts.length}`;
+
+  const stmts = [env.DB.prepare('DELETE FROM kv_chunks WHERE store_key = ? AND version = ?').bind(e.key, version)];
+  parts.forEach((data, idx) => {
+    stmts.push(
+      env.DB.prepare('INSERT INTO kv_chunks (store_key,version,idx,data) VALUES (?,?,?,?)')
+        .bind(e.key, version, idx, data)
+    );
+  });
+  await env.DB.batch(stmts);
+
+  const res = await kvUpsert(env, { key: e.key, value: marker, updatedAt: version }, email).run();
+  if (res && res.meta && res.meta.changes > 0) {
+    await env.DB.prepare('DELETE FROM kv_chunks WHERE store_key = ? AND version <> ?').bind(e.key, version).run();
+    return true;
+  }
+
+  // A newer value already won; drop our chunks unless they are the ones in use.
+  const current = await env.DB.prepare('SELECT value FROM kv_store WHERE key = ?').bind(e.key).first();
+  if (!current || current.value !== marker) {
+    await env.DB.prepare('DELETE FROM kv_chunks WHERE store_key = ? AND version = ?').bind(e.key, version).run();
+  }
+  return false;
+}
+
+/** Rebuild chunked values before they go back to the browser. */
+async function expandEntries(env, rows) {
+  const out = [];
+  for (const row of rows) {
+    let value = row.value;
+    if (typeof value === 'string' && value.indexOf(CHUNK_MARKER) === 0) {
+      const m = value.slice(CHUNK_MARKER.length).match(/^v(\d+):(\d+)$/);
+      if (m) {
+        const version = parseInt(m[1], 10);
+        const parts = await env.DB
+          .prepare('SELECT data FROM kv_chunks WHERE store_key = ? AND version = ? ORDER BY idx ASC')
+          .bind(row.key, version)
+          .all();
+        value = (parts.results || []).map((p) => p.data).join('');
+      }
+    }
+    out.push({ key: row.key, value, updated_at: row.updated_at });
+  }
+  return out;
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
