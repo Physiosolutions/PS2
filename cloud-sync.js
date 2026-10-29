@@ -197,8 +197,11 @@
     if (!enabled || !email || !password) return;
     login(email, password).then(function (ok) {
       if (!ok) return;
-      // Push anything this device has that the cloud does not, then pull changes.
-      flush().then(function () { scheduleSync(); });
+      // Pull first so a fresh device adopts cloud data instead of overwriting it.
+      pullAll().then(function (changed) {
+        if (changed) { location.reload(); return; }
+        flush().then(function () { scheduleSync(); });
+      });
     }).catch(function () { /* silent */ });
   }
 
