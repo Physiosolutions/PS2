@@ -43,6 +43,21 @@
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* quota */ }
   }
 
+  var KEY_BACKUP = 'physioCloudBackup';
+
+  // Keep a bounded local safety copy of anything the cloud overwrites.
+  function backupBeforeOverwrite(key, value) {
+    if (value == null || value.length > 400000) return;
+    var backups = readJson(KEY_BACKUP, {}) || {};
+    backups[key] = { value: value, at: Date.now() };
+    var keys = Object.keys(backups);
+    if (keys.length > 8) {
+      keys.sort(function (a, b) { return (backups[a].at || 0) - (backups[b].at || 0); });
+      while (keys.length > 8) delete backups[keys.shift()];
+    }
+    writeJson(KEY_BACKUP, backups);
+  }
+
   // Fast non-cryptographic hash so we can tell "unchanged" without keeping a
   // second full copy of every store in localStorage.
   function hash(text) {
@@ -68,8 +83,30 @@
   var inFlight = false;
   var reloading = false;
 
-  function isSyncKey(key) {
-    if (!key) return false;
+  // "Nothing stored here yet" placeholder values, e.g. [] or {} or ''.
+  function isEmptyish(value) {
+    if (value == null) return true;
+    var t = String(value).trim();
+    return t === '' || t === '[]' || t === '{}' || t === 'null' || t === '0';
+  }
+
+  // Rough "how much is in here" measure: array length, object key count, or 1
+  // for a plain scalar. Used only to decide which side wins on first contact.
+  function contentScore(value) {
+    if (value == null) return 0;
+    var t = String(value).trim();
+    if (!t || t === 'null') return 0;
+    try {
+      var parsed = JSON.parse(t);
+      if (Array.isArray(parsed)) return parsed.length;
+      if (parsed && typeof parsed === 'object') return Object.keys(parsed).length;
+      return 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function isSyncKey(key) {    if (!key) return false;
     if (key.indexOf('physioCloud') === 0) return false;       // never sync our own bookkeeping
     if (key.indexOf('physioBiometric') === 0) return false;   // device-specific credential
     for (var i = 0; i < SYNC_PREFIXES.length; i++) {
@@ -232,8 +269,10 @@
 
   /**
    * First time this device talks to the cloud.
-   * The server is authoritative for keys it already has; keys that exist only
-   * on this device are uploaded so nothing local is thrown away.
+   * The server is authoritative for keys it already has, EXCEPT when the local
+   * copy has real content and the server copy is an empty placeholder — that
+   * case is almost always "this device is the source of truth", so local wins
+   * and gets uploaded. Keys that exist only on this device are uploaded too.
    */
   function firstContactMerge() {
     if (!enabled || !token) return Promise.resolve(false);
@@ -251,11 +290,20 @@
 
         data.entries.forEach(function (entry) {
           if (!isSyncKey(entry.key)) return;
+          var localValue = null;
+          try { localValue = localStorage.getItem(entry.key); } catch (e) { /* ignore */ }
+          // First contact: whichever side holds more content wins. This stops an
+          // empty cloud copy from wiping a device that has the real data (and
+          // stops a brand-new device from wiping a populated cloud).
+          if (localValue != null && !isEmptyish(localValue) && contentScore(localValue) > contentScore(entry.value)) {
+            return; // keep local; it is uploaded below
+          }
           serverKeys[entry.key] = true;
           meta[entry.key] = Number(entry.updated_at) || 0;
           pushed[entry.key] = hash(entry.value);
           try {
             if (localStorage.getItem(entry.key) !== entry.value) {
+              backupBeforeOverwrite(entry.key, localStorage.getItem(entry.key));
               localStorage.setItem(entry.key, entry.value);
               changed = true;
             }
