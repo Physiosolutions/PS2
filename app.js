@@ -1159,6 +1159,40 @@
                         });
                     }
 
+                    // Tracks who actually logged in, so the "view another portal"
+                    // switcher cannot be used to keep or gain extra privileges.
+                    let portalSwitchOriginEmail = "";
+
+                    function getPortalSwitchOriginUser() {
+                        if (portalSwitchOriginEmail) {
+                            const u = globalRosterRepository.find(x => x.email === portalSwitchOriginEmail);
+                            if (u) return u;
+                        }
+                        return currentActiveSessionUser;
+                    }
+
+                    // A switcher user may only open portals whose work modules are all
+                    // available to their own role; otherwise the switcher would be a
+                    // free privilege upgrade (e.g. Head of Physio -> Admin portal).
+                    function portalScopeOf(roleName) {
+                        const personal = ['my_dashboard', 'my_roster', 'my_profile'];
+                        return (getAllowedModulesForRole(roleName) || []).filter(m => personal.indexOf(m) === -1);
+                    }
+
+                    function canSwitchToPortal(targetUser) {
+                        if (!currentActiveSessionUser || !targetUser) return false;
+                        const origin = getPortalSwitchOriginUser();
+                        if (!origin) return false;
+                        if (targetUser.email === origin.email) return true;
+                        if (!allowedPortalSwitcherRoles.includes(origin.position)) return false;
+                        if (targetUser.position === 'Admin' && origin.position !== 'Admin') return false;
+                        if (origin.position === targetUser.position) return true;
+
+                        const mine = portalScopeOf(origin.position);
+                        const theirs = portalScopeOf(targetUser.position);
+                        return theirs.every(m => mine.indexOf(m) !== -1);
+                    }
+
                     function renderPortalWorkspaceSwitcher() {
                         const select = document.getElementById('switcherSelectField');
                         if (!select) return;
@@ -1166,6 +1200,7 @@
 
                         select.innerHTML = "";
                         globalRosterRepository.forEach(u => {
+                            if (!canSwitchToPortal(u)) return;
                             const opt = document.createElement('option');
                             opt.value = u.email;
                             opt.innerText = `${u.name} (${lookupTranslationValue(u.position)})`;
@@ -5555,6 +5590,7 @@
                             return;
                         }
                         currentActiveSessionUser = userObject;
+                        portalSwitchOriginEmail = userObject.email;
                         try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
                         syncPatientTrackerVisibility();
                         document.getElementById('authContainer').classList.add('hidden');
@@ -5580,7 +5616,7 @@
                         }
                         document.getElementById('activeRoleIndicator').innerText = lookupTranslationValue(userObject.position);
 
-                        if (allowedPortalSwitcherRoles.includes(userObject.position)) {
+                        if (allowedPortalSwitcherRoles.includes(getPortalSwitchOriginUser().position)) {
                             document.getElementById('adminPortalSwitcher').classList.remove('hidden');
                             renderPortalWorkspaceSwitcher(); // Populates the switcher dropdown dynamically
                             document.getElementById('switcherSelectField').value = userObject.email; // Selects the logged-in user by email
@@ -5626,6 +5662,11 @@
 
                     function switchTestingProfileView(selectedPortalEmail) {
                         const targetUser = globalRosterRepository.find(u => u.email === selectedPortalEmail);
+                        if (targetUser && !canSwitchToPortal(targetUser)) {
+                            customAlert("That portal has more access than your own role. Ask an Admin if you need this access.");
+                            renderPortalWorkspaceSwitcher();
+                            return;
+                        }
                         if (targetUser) {
                             currentActiveSessionUser = targetUser;
                             document.getElementById('userMatrixName').innerText = targetUser.name;
@@ -5633,8 +5674,10 @@
                             document.getElementById('activeRoleIndicator').innerText = lookupTranslationValue(targetUser.position);
 
                             // Re-evaluate portal switcher visibility for the target user
-                            if (allowedPortalSwitcherRoles.includes(targetUser.position)) {
+                            if (allowedPortalSwitcherRoles.includes(getPortalSwitchOriginUser().position)) {
                                 document.getElementById('adminPortalSwitcher').classList.remove('hidden');
+                                renderPortalWorkspaceSwitcher();
+                                document.getElementById('switcherSelectField').value = targetUser.email;
                             } else {
                                 document.getElementById('adminPortalSwitcher').classList.add('hidden');
                             }
@@ -7933,12 +7976,21 @@
                     }
 
                     function auditProfilesChangeset(reqId, commitState) {
+                        if (!currentActiveSessionUser || !allowedProfileApproverRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("You do not have permission to approve profile changes.");
+                            return;
+                        }
                         const index = staffProfileChangesetPipeline.findIndex(r => r.id === reqId);
                         if (index !== -1) {
                             const req = staffProfileChangesetPipeline[index];
                             if (commitState) {
                                 const target = globalRosterRepository.find(u => u.email === req.email);
                                 if (target) {
+                                    if (!canManageStaffRoles()) {
+                                        // Role / sign-in email changes need Staff Editor rights.
+                                        delete req.requestedChanges.position;
+                                        delete req.requestedChanges.email;
+                                    }
                                     for (let k in req.requestedChanges) {
                                         if (k === 'extraFieldsData') {
                                             if (!target.extraFieldsData) target.extraFieldsData = {};
@@ -8608,6 +8660,14 @@
                         });
                     }
 
+                    // Who may change a role, sign-in email, or create accounts.
+                    // Uses the configurable "Staff Editor" permission list (Admin Hub > Core Utilities).
+                    function canManageStaffRoles() {
+                        if (!currentActiveSessionUser) return false;
+                        const role = currentActiveSessionUser.position;
+                        return Array.isArray(allowedStaffEditorRoles) && allowedStaffEditorRoles.includes(role);
+                    }
+
                     function openRosterUpdatePanel(email) {
                         const staff = globalRosterRepository.find(u => u.email === email);
                         if (!staff) return;
@@ -8646,6 +8706,16 @@
         `;
                         });
 
+                        const canEditRole = canManageStaffRoles();
+                        const roleOptionsHtml = Object.keys(globalRolePermissionsMatrix).map(r => '<option value="' + r + '" ' + (staff.position === r ? 'selected' : '') + '>' + lookupTranslationValue(r) + '</option>').join('');
+                        const emailFieldHtml = canEditRole
+                            ? `<input type="email" id="mUpEmail" value="${staff.email || ''}">`
+                            : `<input type="email" id="mUpEmail" value="${staff.email || ''}" disabled title="Only a Staff Editor can change the sign-in email">`;
+                        const positionFieldHtml = canEditRole
+                            ? `<select id="mUpPos">${roleOptionsHtml}</select>`
+                            : `<select id="mUpPos" disabled title="Only a Staff Editor can change a role">${roleOptionsHtml}</select>
+                               <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">🔒 Positions and sign-in emails can only be changed by a Staff Editor (Admin, General Manager, Asst. Operations Manager).</div>`;
+
                         const mount = document.getElementById('systemGlobalModalMount');
                         mount.innerHTML = `
         <div class="system-inline-modal-overlay">
@@ -8656,8 +8726,8 @@
                     <div class="form-group"><label>Mobile Phone</label><input type="text" id="mUpPhone" value="${staff.phone || ''}"></div>
                     <div class="form-group"><label>Emergency Contact</label><input type="text" id="mUpEmerg" value="${staff.emergencyContact || ''}"></div>
                     <div class="form-group"><label>Unique Accent Color Code</label><input type="color" id="mUpCol" value="${staff.accentColor || '#004b87'}"></div>
-                    <div class="form-group"><label>Email Address</label><input type="email" id="mUpEmail" value="${staff.email || ''}"></div>
-                    <div class="form-group"><label>Position / Role</label><select id="mUpPos">${Object.keys(globalRolePermissionsMatrix).map(r => '<option value="' + r + '" ' + (staff.position === r ? 'selected' : '') + '>' + lookupTranslationValue(r) + '</option>').join('')}</select></div>
+                    <div class="form-group"><label>Email Address</label>${emailFieldHtml}</div>
+                    <div class="form-group"><label>Position / Role</label>${positionFieldHtml}</div>
                     <div class="form-group"><label>Contract / Style</label><select id="mUpStyle"><option value="Full-Time" ${staff.style === 'Full-Time' ? 'selected' : ''}>Full-Time</option><option value="Part-Time" ${staff.style === 'Part-Time' ? 'selected' : ''}>Part-Time</option></select></div>
 
                     <!-- Health License Toggle & fields -->
@@ -8715,52 +8785,101 @@ ${extraInputsHtml}
 
                     function commitRosterUpdateDirectly(email) {
                         const target = globalRosterRepository.find(u => u.email === email);
-                        if (target) {
-                            target.name = document.getElementById('mUpName').value.trim();
-                            target.phone = document.getElementById('mUpPhone').value.trim();
-                            target.emergencyContact = document.getElementById('mUpEmerg').value.trim();
-                            target.accentColor = document.getElementById('mUpCol').value;
-                            target.email = document.getElementById('mUpEmail').value.trim();
-                            target.position = document.getElementById('mUpPos').value;
-                            target.department = target.position === "Admin" ? "Administration Hub" : (target.position === "Physiotherapist" || target.position === "Head of Physio" ? "Clinical Services Unit" : "Operational Support Unit");
-                            target.style = document.getElementById('mUpStyle').value;
-                            const healthLicActive = document.getElementById('mUpHealthLicActive').checked;
-                            target.healthLicence = healthLicActive ? document.getElementById('mUpHealthLicNo').value.trim() : "";
-                            target.healthLicenceExpiry = healthLicActive ? document.getElementById('mUpHealthLicExpiry').value : "";
-                            target.quotaActive = document.getElementById('mUpQuotaActive').checked;
-                            target.quotaNumber = target.quotaActive ? document.getElementById('mUpQuotaNo').value.trim() : "";
-                            target.quotaExpiry = target.quotaActive ? document.getElementById('mUpQuotaExpiry').value : "";
+                        if (!target) { closeSystemModalBox(); return; }
 
-                            if (modifyStaffPhotoBase64) {
-                                target.photoUrl = modifyStaffPhotoBase64;
-                                modifyStaffPhotoBase64 = "";
+                        const notices = [];
+                        const canEditRole = canManageStaffRoles();
+                        const oldEmail = target.email;
+
+                        target.name = document.getElementById('mUpName').value.trim();
+                        target.phone = document.getElementById('mUpPhone').value.trim();
+                        target.emergencyContact = document.getElementById('mUpEmerg').value.trim();
+                        target.accentColor = document.getElementById('mUpCol').value;
+                        target.style = document.getElementById('mUpStyle').value;
+                        const healthLicActive = document.getElementById('mUpHealthLicActive').checked;
+                        target.healthLicence = healthLicActive ? document.getElementById('mUpHealthLicNo').value.trim() : "";
+                        target.healthLicenceExpiry = healthLicActive ? document.getElementById('mUpHealthLicExpiry').value : "";
+                        target.quotaActive = document.getElementById('mUpQuotaActive').checked;
+                        target.quotaNumber = target.quotaActive ? document.getElementById('mUpQuotaNo').value.trim() : "";
+                        target.quotaExpiry = target.quotaActive ? document.getElementById('mUpQuotaExpiry').value : "";
+
+                        if (modifyStaffPhotoBase64) {
+                            target.photoUrl = modifyStaffPhotoBase64;
+                            modifyStaffPhotoBase64 = "";
+                        }
+
+                        // Dynamically save all core fields defined in your registry
+                        globalCoreStaffFields.forEach(field => {
+                            const inputEl = document.getElementById(`mUpField_${field.key}`);
+                            if (inputEl) {
+                                target[field.key] = inputEl.value.trim();
                             }
+                        });
 
-                            // Dynamically save all core fields defined in your registry
-                            globalCoreStaffFields.forEach(field => {
-                                const inputEl = document.getElementById(`mUpField_${field.key}`);
-                                if (inputEl) {
-                                    target[field.key] = inputEl.value.trim();
+                        if (!target.extraFieldsData) target.extraFieldsData = {};
+                        dynamicCustomStaffFields.forEach(f => {
+                            const inputEl = document.getElementById(`mUpExtra_${f.id}`);
+                            if (inputEl) {
+                                target.extraFieldsData[f.id] = inputEl.value.trim();
+                            }
+                            if (f.hasExpiry) {
+                                const expEl = document.getElementById(`mUpExtraExpiry_${f.id}`);
+                                if (expEl) {
+                                    target.extraFieldsData[f.id + '_expiry'] = expEl.value;
                                 }
-                            });
+                            }
+                        });
 
-                            if (!target.extraFieldsData) target.extraFieldsData = {};
-                            dynamicCustomStaffFields.forEach(f => {
-                                const inputEl = document.getElementById(`mUpExtra_${f.id}`);
-                                if (inputEl) {
-                                    target.extraFieldsData[f.id] = inputEl.value.trim();
-                                }
-                                if (f.hasExpiry) {
-                                    const expEl = document.getElementById(`mUpExtraExpiry_${f.id}`);
-                                    if (expEl) {
-                                        target.extraFieldsData[f.id + '_expiry'] = expEl.value;
+                        // ---- Identity (role / sign-in email) is Staff Editor only ----
+                        if (canEditRole) {
+                            const nextEmail = (document.getElementById('mUpEmail').value || '').trim();
+                            const nextPosition = document.getElementById('mUpPos').value;
+
+                            if (nextPosition && nextPosition !== target.position) {
+                                const demotingAdmin = target.position === 'Admin' && nextPosition !== 'Admin';
+                                const activeAdmins = globalRosterRepository.filter(u => u.position === 'Admin' && u.active !== false).length;
+                                if (demotingAdmin && activeAdmins <= 1) {
+                                    notices.push("Role was NOT changed: this is the last active Admin account. Promote another Admin first.");
+                                } else {
+                                    target.position = nextPosition;
+                                    target.department = nextPosition === "Admin"
+                                        ? "Administration Hub"
+                                        : (nextPosition === "Physiotherapist" || nextPosition === "Head of Physio"
+                                            ? "Clinical Services Unit"
+                                            : "Operational Support Unit");
+                                    if (currentActiveSessionUser && currentActiveSessionUser.email === oldEmail) {
+                                        currentActiveSessionUser.position = nextPosition;
                                     }
                                 }
-                            });
+                            }
 
+                            if (nextEmail && nextEmail !== oldEmail) {
+                                const duplicate = globalRosterRepository.some(u => u !== target && (u.email || '').toLowerCase() === nextEmail.toLowerCase());
+                                if (duplicate) {
+                                    notices.push(`Email was NOT changed: "${nextEmail}" already belongs to another staff record.`);
+                                } else {
+                                    target.email = nextEmail;
+                                    if (stagedActiveStatusChanges && Object.prototype.hasOwnProperty.call(stagedActiveStatusChanges, oldEmail)) {
+                                        stagedActiveStatusChanges[nextEmail] = stagedActiveStatusChanges[oldEmail];
+                                        delete stagedActiveStatusChanges[oldEmail];
+                                    }
+                                    if (currentActiveSessionUser && currentActiveSessionUser.email === oldEmail) {
+                                        currentActiveSessionUser.email = nextEmail;
+                                        currentActiveSessionUser.name = target.name;
+                                    }
+                                }
+                            }
+                        } else {
+                            notices.push("Position and sign-in email were left unchanged: Staff Editor permission is required.");
+                        }
+
+                        // Close the editor first: customAlert mounts into the same container.
+                        closeSystemModalBox();
+                        if (notices.length) {
+                            customAlert("Profile details saved.\n\n" + notices.join("\n"));
+                        } else {
                             customAlert("Credentials properties synchronized cleanly across database nodes.");
                         }
-                        closeSystemModalBox();
                         persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
@@ -8980,6 +9099,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         reader.readAsDataURL(file);
                     }
                     function openAddNewStaffModalBox() {
+                        if (!canManageStaffRoles()) {
+                            customAlert("Only a Staff Editor (Admin, General Manager, Asst. Operations Manager) can register new staff profiles.");
+                            return;
+                        }
                         newlyAddedStaffProfilePhotoBase64 = "";
 
                         // Generate roles options dynamically from your active permission matrix keys
@@ -9126,6 +9249,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
     `;
                     }
                     function commitAddNewStaffRoster() {
+                        if (!canManageStaffRoles()) {
+                            closeSystemModalBox();
+                            customAlert("Only a Staff Editor (Admin, General Manager, Asst. Operations Manager) can register new staff profiles.");
+                            return;
+                        }
                         const name = document.getElementById('addStName').value.trim();
                         const email = document.getElementById('addStEmail').value.trim();
                         const pos = document.getElementById('addStPos').value;
@@ -9150,6 +9278,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         if (!name || !email) {
                             customAlert("Please provide verified credentials parameters.");
+                            return;
+                        }
+
+                        if (globalRosterRepository.some(u => (u.email || '').toLowerCase() === email.toLowerCase())) {
+                            customAlert("A staff profile with that email already exists. Sign-in emails must be unique.");
                             return;
                         }
 
@@ -9216,6 +9349,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
 
                         closeSystemModalBox();
+                        customAlert("New staff profile created: " + name + " (" + lookupTranslationValue(pos) + ")");
                         persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
@@ -14360,6 +14494,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     function terminateSession() {
                         customConfirm("Do you wish to exit the current operations session?", () => {
                             currentActiveSessionUser = null;
+                            portalSwitchOriginEmail = "";
                             document.getElementById('appContainer').classList.add('hidden');
                             renderAuthViewLayoutBox();
                             onRosterCycleChange();
@@ -14656,7 +14791,15 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             });
                         }
 
-                        if (globalActiveViewportModule === 'staff_directory') renderStaffComplianceDirectory();
+                        if (globalActiveViewportModule === 'staff_directory') {
+                            renderStaffComplianceDirectory();
+                            const canEditStaff = canManageStaffRoles();
+                            const canToggleActive = !!currentActiveSessionUser && currentActiveSessionUser.position === 'Admin';
+                            const registerBtn = document.getElementById('lbl_btn_register_roster_member');
+                            if (registerBtn) registerBtn.style.display = canEditStaff ? '' : 'none';
+                            const saveStatusBtn = document.getElementById('lbl_btn_save_status_changes');
+                            if (saveStatusBtn) saveStatusBtn.style.display = canToggleActive ? '' : 'none';
+                        }
                         if (globalActiveViewportModule === 'roster_engine') { currentRosterTab = 'fulltime'; renderRosterStaffSelection(); onRosterCycleChange(); ptInit(); currentRosterTab = 'fulltime'; }
                         if (globalActiveViewportModule === 'overtime_tracker') renderActiveStaffOTCycleInteractiveTable();
                         if (globalActiveViewportModule === 'master_ot_sheet') renderMasterOTScheduleMatrix();
@@ -14759,6 +14902,10 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     }
 
                     function commitStagedActiveStatuses() {
+                        if (!currentActiveSessionUser || currentActiveSessionUser.position !== "Admin") {
+                            customAlert("Only Administrative profiles are authorized to modify account activation statuses.");
+                            return;
+                        }
                         const pendingEmails = Object.keys(stagedActiveStatusChanges);
 
                         if (pendingEmails.length === 0) {
@@ -14766,7 +14913,22 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             return;
                         }
 
+                        const blocked = [];
                         pendingEmails.forEach(email => {
+                            if (stagedActiveStatusChanges[email] === false && currentActiveSessionUser.email === email) {
+                                blocked.push(email);
+                                delete stagedActiveStatusChanges[email];
+                            }
+                        });
+                        if (blocked.length) {
+                            customAlert("You cannot deactivate your own administrative account.");
+                        }
+                        if (Object.keys(stagedActiveStatusChanges).length === 0) {
+                            renderStaffComplianceDirectory();
+                            return;
+                        }
+
+                        Object.keys(stagedActiveStatusChanges).forEach(email => {
                             const staff = globalRosterRepository.find(u => u.email === email);
                             if (staff) {
                                 staff.active = stagedActiveStatusChanges[email];
