@@ -1212,6 +1212,10 @@
                     }
 
                     function createNewSystemRole() {
+                        if (!canConfigureSystem()) {
+                            customAlert("Only a System Configurator (Admin or General Manager) can create roles.");
+                            return;
+                        }
                         const roleName = document.getElementById('newRoleInputName').value.trim();
                         const templateRole = document.getElementById('newRoleTemplateSelector').value;
 
@@ -1238,6 +1242,10 @@
                     }
 
                     function renameSystemRole() {
+                        if (!canConfigureSystem()) {
+                            customAlert("Only a System Configurator (Admin or General Manager) can rename roles.");
+                            return;
+                        }
                         const oldName = document.getElementById('renameRoleTargetSelector').value;
                         const newName = document.getElementById('renameRoleNewNameInput').value.trim();
 
@@ -1300,6 +1308,10 @@
                     }
 
                     function deleteSystemRole() {
+                        if (!canConfigureSystem()) {
+                            customAlert("Only a System Configurator (Admin or General Manager) can delete roles.");
+                            return;
+                        }
                         const roleName = document.getElementById('deleteRoleTargetSelector').value;
                         if (!roleName) { customAlert("Please select a role to delete."); return; }
 
@@ -6201,6 +6213,10 @@
                     }
 
                     function saveAccessControlMatrix() {
+                        if (!canConfigureSystem()) {
+                            customAlert("Only a System Configurator (Admin or General Manager) can change page permissions.");
+                            return;
+                        }
                         const roles = Object.keys(globalRolePermissionsMatrix);
                         const modules = [...globalSidebarOrder];
                         roles.forEach(role => {
@@ -6980,6 +6996,10 @@
                     }
 
                     function saveUnifiedAuthorizationMatrix() {
+                        if (!canConfigureSystem()) {
+                            customAlert("Only a System Configurator (Admin or General Manager) can change the authorization matrix.");
+                            return;
+                        }
                         const roles = Object.keys(globalRolePermissionsMatrix);
                         const catMap = {
                             broadcaster: { arr: allowedBroadcasterRoles, name: 'Broadcast Center' },
@@ -8666,6 +8686,14 @@
                         if (!currentActiveSessionUser) return false;
                         const role = currentActiveSessionUser.position;
                         return Array.isArray(allowedStaffEditorRoles) && allowedStaffEditorRoles.includes(role);
+                    }
+
+                    // Who may change the permission matrix, or create/rename/delete roles.
+                    // Uses the configurable "System Configurator" permission list.
+                    function canConfigureSystem() {
+                        if (!currentActiveSessionUser) return false;
+                        const role = currentActiveSessionUser.position;
+                        return Array.isArray(allowedSystemConfiguratorRoles) && allowedSystemConfiguratorRoles.includes(role);
                     }
 
                     function openRosterUpdatePanel(email) {
@@ -14774,6 +14802,11 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             renderPortalWorkspaceSwitcher();
                             renderSidebarOrderingPanel();
                             refreshDictionaryInlineStats();
+                            const canCfg = canConfigureSystem();
+                            ['adminCardAccessMatrix', 'adminCardRoleManager', 'adminCardUnifiedAuth'].forEach(cardId => {
+                                const card = document.getElementById(cardId);
+                                if (card) card.style.display = canCfg ? '' : 'none';
+                            });
                             const tableSelector = document.getElementById('builderTableSelector');
                             if (tableSelector) {
                                 loadActiveSchemaStructure(tableSelector.value);
