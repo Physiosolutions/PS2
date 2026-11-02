@@ -6253,6 +6253,13 @@
                                 });
                             }
                         });
+                        const selfAdminCb = currentActiveSessionUser
+                            ? document.getElementById(`perm_${currentActiveSessionUser.position}_admin_hub`)
+                            : null;
+                        if (selfAdminCb && !selfAdminCb.checked) {
+                            if (!confirm("Your own role will lose access to the Administrative Core. Continue?")) return;
+                        }
+
                         modules.forEach(mod => {
                             roles.forEach(role => {
                                 const cb = document.getElementById(`perm_${role}_${mod}`);
@@ -6266,6 +6273,7 @@
                                 }
                             });
                         });
+
                         rebuildDynamicPortalMenus();
                         persistRolePermissionsMatrix();
                         persistCoreStores();
@@ -7074,15 +7082,29 @@
                             passwordReset: { arr: allowedPasswordResetRoles, name: 'Password Reset' }
                         };
 
+                        const selections = {};
                         Object.keys(catMap).forEach(key => {
                             const chosen = [];
                             roles.forEach(role => {
                                 const el = document.getElementById(`unifAuth_${key}_${role}`);
                                 if (el && el.checked) chosen.push(role);
                             });
+                            selections[key] = chosen;
+                        });
+
+                        // Never lock the whole clinic out of this screen.
+                        if (!selections.systemConfigurator.length) {
+                            customAlert("At least one role must stay a System Configurator (Admin or General Manager), otherwise nobody can manage permissions again.");
+                            return;
+                        }
+                        if (currentActiveSessionUser && !selections.systemConfigurator.includes(currentActiveSessionUser.position)) {
+                            if (!confirm("Your own role will lose System Configurator access. Continue?")) return;
+                        }
+
+                        Object.keys(catMap).forEach(key => {
                             // Update the array in-place
                             catMap[key].arr.length = 0;
-                            chosen.forEach(r => catMap[key].arr.push(r));
+                            selections[key].forEach(r => catMap[key].arr.push(r));
                         });
 
                         customAlert("All authorization matrices saved and synchronized successfully.");
