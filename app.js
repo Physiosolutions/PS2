@@ -1610,6 +1610,32 @@
                     let dynamicCustomStaffFields = [
                     ];
 
+                    // Staff Registry field definitions (core + custom) are configuration:
+                    // persist them locally and let the cloud sync pick them up, otherwise
+                    // every added/edited field disappears on refresh.
+                    function persistStaffFieldRegistry() {
+                        try { localStorage.setItem('physioCoreStaffFields', JSON.stringify(globalCoreStaffFields)); } catch (e) { }
+                        try { localStorage.setItem('physioCustomStaffFields', JSON.stringify(dynamicCustomStaffFields)); } catch (e) { }
+                    }
+                    function loadStaffFieldRegistry() {
+                        try {
+                            const raw = localStorage.getItem('physioCoreStaffFields');
+                            if (raw) {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed) && parsed.length) globalCoreStaffFields = parsed;
+                            }
+                        } catch (e) { }
+                        try {
+                            const raw = localStorage.getItem('physioCustomStaffFields');
+                            if (raw) {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed)) dynamicCustomStaffFields = parsed;
+                            }
+                        } catch (e) { }
+                    }
+                    loadStaffFieldRegistry();
+                    window.__persistStaffFieldRegistry = persistStaffFieldRegistry;
+
                     let globalTableSchemas = {
                         therapist_volume: [
                             { name: "Date", key: "date", type: "date" },
@@ -1764,6 +1790,7 @@
                     function persistCoreStores() {
                         if (typeof window.__saveRosterStore === 'function') window.__saveRosterStore();
                         if (typeof window.__saveLeaveRepository === 'function') window.__saveLeaveRepository();
+                        persistStaffFieldRegistry();
                         persistRolePermissionsMatrix();
                         persistTextDictionary();
                         persistReferenceRepository();
@@ -6204,8 +6231,8 @@
                                 row += `<td><input type="checkbox" class="matrix-checkbox" id="perm_${role}_${mod}" ${isAllowed ? 'checked' : ''}></td>`;
                             });
                             row += `<td style="text-align:center; font-size:9px;">
-                                <a href="#" onclick="event.preventDefault(); var m='${modKey}'; document.querySelectorAll('#accessControlMatrixTable tr[data-mod=\"'+m+'\"] input[type=checkbox]').forEach(function(cb){cb.checked=true;});" style="color:var(--primary);">All</a> |
-                                <a href="#" onclick="event.preventDefault(); var m='${modKey}'; document.querySelectorAll('#accessControlMatrixTable tr[data-mod=\"'+m+'\"] input[type=checkbox]').forEach(function(cb){cb.checked=false;});" style="color:var(--text-muted);">Clear</a>
+                                <a href="#" onclick="event.preventDefault(); setAccessMatrixRow('${modKey}', true);" style="color:var(--primary);">All</a> |
+                                <a href="#" onclick="event.preventDefault(); setAccessMatrixRow('${modKey}', false);" style="color:var(--text-muted);">Clear</a>
                             </td>`;
                             row += `</tr>`;
                             matrixTable.innerHTML += row;
@@ -6240,6 +6267,8 @@
                             });
                         });
                         rebuildDynamicPortalMenus();
+                        persistRolePermissionsMatrix();
+                        persistCoreStores();
                         customAlert("All role permissions saved and synchronized.");
                     }
 
@@ -6984,8 +7013,8 @@
                             });
                             // Select All / Clear for this row
                             bodyHtml += `<td style="text-align:center; font-size:9px;">
-                                <a href="#" onclick="event.preventDefault(); var c='${cat.key}'; document.querySelectorAll('#unifiedAuthMatrixBody input[id^=\\'unifAuth_'+c+'\\']').forEach(function(cb){cb.checked=true;});" style="color:var(--primary);">All</a> |
-                                <a href="#" onclick="event.preventDefault(); var c='${cat.key}'; document.querySelectorAll('#unifiedAuthMatrixBody input[id^=\\'unifAuth_'+c+'\\']').forEach(function(cb){cb.checked=false;});" style="color:var(--text-muted);">Clear</a>
+                                <a href="#" onclick="event.preventDefault(); setUnifiedAuthRow('${cat.key}', true);" style="color:var(--primary);">All</a> |
+                                <a href="#" onclick="event.preventDefault(); setUnifiedAuthRow('${cat.key}', false);" style="color:var(--text-muted);">Clear</a>
                             </td>`;
                             bodyHtml += `</tr>`;
                         });
@@ -6993,6 +7022,20 @@
                             bodyHtml = `<tr><td colspan="${roles.length + 3}" style="text-align:center; padding:30px; color:var(--text-muted); font-size:12px;">No permissions match "${filter}"</td></tr>`;
                         }
                         body.innerHTML = bodyHtml;
+                    }
+
+                    // "All / Clear" helpers - kept out of inline HTML so the selector
+                    // quotes cannot break the onclick attribute.
+                    function setAccessMatrixRow(moduleKey, checked) {
+                        const row = document.querySelector('#accessControlMatrixTable tr[data-mod="' + moduleKey + '"]');
+                        if (!row) return;
+                        row.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = checked; });
+                    }
+
+                    function setUnifiedAuthRow(categoryKey, checked) {
+                        const row = document.querySelector('#unifiedAuthMatrixBody tr[data-cat="' + categoryKey + '"]');
+                        if (!row) return;
+                        row.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = checked; });
                     }
 
                     function saveUnifiedAuthorizationMatrix() {
@@ -7044,6 +7087,7 @@
 
                         customAlert("All authorization matrices saved and synchronized successfully.");
                         savePermissionRegistry(); // persist to localStorage
+                        persistCoreStores();      // push the change to the cloud copy
                         synchronizeWorkspaceCoreStatus();
                         var fdoMod = document.getElementById('mod_fdo_attendance');
                         if (fdoMod && !fdoMod.classList.contains('hidden')) {
@@ -7088,7 +7132,12 @@
                     function renderCustomFieldsConfiguratorList() {
                         const container = document.getElementById('customFieldsEditorContainer');
                         if (!container) return;
+                        // Persist whatever was just changed before re-rendering.
+                        persistStaffFieldRegistry();
                         container.innerHTML = "";
+                        // Any inline change in this list must hit localStorage too.
+                        container.onchange = function () { persistStaffFieldRegistry(); };
+                        container.onclick = function () { persistStaffFieldRegistry(); };
 
                         // Show core built-in fields with order, reorder, and req toggle
                         globalCoreStaffFields.forEach((f, ci) => {
@@ -7113,6 +7162,7 @@
             <div style="display:flex; gap:3px;">
                 <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="moveCoreStaffField(${ci}, -1)" ${ci === 0 ? 'disabled' : ''}>▲</button>
                 <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="moveCoreStaffField(${ci}, 1)" ${ci === globalCoreStaffFields.length - 1 ? 'disabled' : ''}>▼</button>
+                <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="openStaffFieldEditor('core', ${ci})">✏️</button>
                 <button class="action-btn" style="background:var(--danger); padding:1px 4px; font-size:8px; min-height:unset;" onclick="deleteCoreStaffField(${ci})">🗑️</button>
             </div>`;
                             container.appendChild(div);
@@ -7137,6 +7187,7 @@
                 <div style="display:flex; gap:3px;">
                     <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="moveCustomStaffField(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
                     <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="moveCustomStaffField(${idx}, 1)" ${idx === dynamicCustomStaffFields.length - 1 ? 'disabled' : ''}>▼</button>
+                    <button class="action-btn" style="padding:1px 4px; font-size:8px; min-height:unset;" onclick="openStaffFieldEditor('custom', ${idx})">✏️</button>
                     <button class="action-btn" style="background:var(--danger); padding:2px 6px; font-size:9px;" onclick="deleteCustomStaffField(${idx})">🗑️</button>
                 </div>
             `;
@@ -7149,6 +7200,7 @@
                         const target = idx + direction;
                         if (target < 0 || target >= dynamicCustomStaffFields.length) return;
                         [dynamicCustomStaffFields[idx], dynamicCustomStaffFields[target]] = [dynamicCustomStaffFields[target], dynamicCustomStaffFields[idx]];
+                        persistStaffFieldRegistry();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -7156,12 +7208,14 @@
                         const target = idx + direction;
                         if (target < 0 || target >= globalCoreStaffFields.length) return;
                         [globalCoreStaffFields[idx], globalCoreStaffFields[target]] = [globalCoreStaffFields[target], globalCoreStaffFields[idx]];
+                        persistStaffFieldRegistry();
                         synchronizeWorkspaceCoreStatus();
                     }
 
                     function deleteCoreStaffField(idx) {
                         if (!confirm("Delete core field \"" + globalCoreStaffFields[idx].label + "\"? This cannot be undone.")) return;
                         globalCoreStaffFields.splice(idx, 1);
+                        persistStaffFieldRegistry();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -7177,7 +7231,79 @@
                         });
 
                         dynamicCustomStaffFields.splice(idx, 1);
+                        persistStaffFieldRegistry();
                         customAlert("Custom registry field deleted successfully.");
+                        synchronizeWorkspaceCoreStatus();
+                    }
+
+                    // ---- Edit an existing field (label / type / required / attach) ----
+                    let staffFieldEditorTarget = null;
+
+                    function openStaffFieldEditor(kind, index) {
+                        const isCore = kind === 'core';
+                        const field = isCore ? globalCoreStaffFields[index] : dynamicCustomStaffFields[index];
+                        if (!field) return;
+                        staffFieldEditorTarget = { kind: kind, index: index };
+                        const mount = document.getElementById('systemGlobalModalMount');
+                        mount.innerHTML = `
+        <div class="system-inline-modal-overlay">
+            <div class="system-inline-modal-box" style="width:400px;">
+                <h3 style="margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:6px;">✏️ Edit ${isCore ? 'Core' : 'Custom'} Field</h3>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>Field Label</label>
+                    <input type="text" id="staffFieldEditLabel">
+                </div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>Field Type</label>
+                    <select id="staffFieldEditType">
+                        <option value="text">Text</option>
+                        <option value="date">Date</option>
+                        <option value="date_expiry">Date + Expiry alert</option>
+                    </select>
+                </div>
+                <label style="display:flex; align-items:center; gap:6px; font-size:11px; margin-bottom:6px; cursor:pointer;">
+                    <input type="checkbox" id="staffFieldEditRequired"> Required field
+                </label>
+                ${isCore ? '' : `<label style="display:flex; align-items:center; gap:6px; font-size:11px; margin-bottom:6px; cursor:pointer;">
+                    <input type="checkbox" id="staffFieldEditAttach"> Allow file attachment
+                </label>`}
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                    <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Cancel</button>
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitStaffFieldEditor()">Save Changes</button>
+                </div>
+            </div>
+        </div>`;
+                        // Fill values through the DOM so quotes in the label are safe.
+                        document.getElementById('staffFieldEditLabel').value = field.label || '';
+                        document.getElementById('staffFieldEditType').value = field.isExpiry ? 'date_expiry' : (field.type || 'text');
+                        document.getElementById('staffFieldEditRequired').checked = !!field.required;
+                        const attachEl = document.getElementById('staffFieldEditAttach');
+                        if (attachEl) attachEl.checked = !!field.requireAttach;
+                    }
+
+                    function commitStaffFieldEditor() {
+                        if (!staffFieldEditorTarget) return;
+                        const kind = staffFieldEditorTarget.kind;
+                        const index = staffFieldEditorTarget.index;
+                        const field = kind === 'core' ? globalCoreStaffFields[index] : dynamicCustomStaffFields[index];
+                        if (!field) { closeSystemModalBox(); return; }
+
+                        const label = document.getElementById('staffFieldEditLabel').value.trim();
+                        if (!label) { customAlert("Please provide a field label."); return; }
+
+                        const typeVal = document.getElementById('staffFieldEditType').value;
+                        field.label = label;
+                        field.type = typeVal === 'date_expiry' ? 'date' : typeVal;
+                        field.isExpiry = typeVal === 'date_expiry';
+                        field.required = document.getElementById('staffFieldEditRequired').checked;
+                        if (kind !== 'core') {
+                            field.requireAttach = document.getElementById('staffFieldEditAttach').checked;
+                        }
+
+                        staffFieldEditorTarget = null;
+                        closeSystemModalBox();
+                        customAlert(`Field "${label}" updated. Existing staff data is kept.`);
+                        persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -7210,6 +7336,7 @@
                         document.getElementById('newCustomFieldAttach').checked = false;
 
                         customAlert(`Dynamic Custom Field "${label}" registered successfully.`);
+                        persistStaffFieldRegistry();
                         synchronizeWorkspaceCoreStatus();
                     }
 
@@ -7220,6 +7347,8 @@
                     function showCustomFieldsModal() {
                         const existing = document.getElementById('customFieldsModalOverlay');
                         if (existing) existing.remove();
+                        // Catch edits that trigger a re-render (type / required).
+                        persistStaffFieldRegistry();
 
                         const coreHtml = globalCoreStaffFields.map((f, ci) => {
                             if (f.required === undefined) f.required = true;
@@ -7238,6 +7367,7 @@
                         <input type="checkbox" ${f.required ? 'checked' : ''} onchange="globalCoreStaffFields[${ci}].required = this.checked; showCustomFieldsModal();" style="width:13px; height:13px;"> Req
                     </label>
                     <span style="font-size:10px; color:var(--text-muted);">[Core]</span>
+                    <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="openStaffFieldEditor('core', ${ci})">✏️</button>
                     <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="moveCoreStaffField(${ci}, -1); showCustomFieldsModal();" ${ci === 0 ? 'disabled' : ''}>▲</button>
                     <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="moveCoreStaffField(${ci}, 1); showCustomFieldsModal();" ${ci === globalCoreStaffFields.length - 1 ? 'disabled' : ''}>▼</button>
                     <button class="action-btn" style="background:var(--danger); padding:2px 6px; font-size:9px; min-height:unset;" onclick="deleteCoreStaffField(${ci}); showCustomFieldsModal();">🗑️</button>
@@ -7261,6 +7391,7 @@
                     <label style="display:flex; align-items:center; gap:3px; font-size:10px; cursor:pointer; white-space:nowrap;">
                         <input type="checkbox" ${f.requireAttach ? 'checked' : ''} onchange="dynamicCustomStaffFields[${idx}].requireAttach = this.checked; synchronizeWorkspaceCoreStatus();" style="width:13px; height:13px;"> File
                     </label>
+                    <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="openStaffFieldEditor('custom', ${idx})">✏️</button>
                     <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="moveCustomStaffField(${idx}, -1); showCustomFieldsModal();" ${idx === 0 ? 'disabled' : ''}>▲</button>
                     <button class="action-btn" style="padding:2px 6px; font-size:9px; min-height:unset;" onclick="moveCustomStaffField(${idx}, 1); showCustomFieldsModal();" ${idx === dynamicCustomStaffFields.length - 1 ? 'disabled' : ''}>▼</button>
                     <button class="action-btn" style="background:var(--danger); padding:2px 6px; font-size:9px; min-height:unset;" onclick="deleteCustomStaffField(${idx}); showCustomFieldsModal();">🗑️</button>
@@ -7282,6 +7413,8 @@
                     <button class="action-btn" style="width:100%; justify-content:center; background:var(--success); margin-top:16px;" onclick="closeCustomFieldsModal()">Done</button>
                 </div>`;
                         overlay.addEventListener('click', e => { if (e.target === overlay) closeCustomFieldsModal(); });
+                        // Inline edits inside the expanded view must persist as well.
+                        overlay.addEventListener('change', () => persistStaffFieldRegistry());
                         document.body.appendChild(overlay);
                     }
 
@@ -8696,6 +8829,17 @@
                         return Array.isArray(allowedSystemConfiguratorRoles) && allowedSystemConfiguratorRoles.includes(role);
                     }
 
+                    // A staff editor may hand out a role only if that role gives no
+                    // access their own role lacks. Only an Admin may create Admins.
+                    function canAssignRole(nextPosition) {
+                        if (!canManageStaffRoles() || !currentActiveSessionUser || !nextPosition) return false;
+                        if (currentActiveSessionUser.position === 'Admin') return true;
+                        if (nextPosition === 'Admin') return false;
+                        const mine = portalScopeOf(currentActiveSessionUser.position);
+                        const theirs = portalScopeOf(nextPosition);
+                        return theirs.every(m => mine.indexOf(m) !== -1);
+                    }
+
                     function openRosterUpdatePanel(email) {
                         const staff = globalRosterRepository.find(u => u.email === email);
                         if (!staff) return;
@@ -8864,10 +9008,15 @@ ${extraInputsHtml}
                             const nextPosition = document.getElementById('mUpPos').value;
 
                             if (nextPosition && nextPosition !== target.position) {
+                                const isSelf = !!currentActiveSessionUser && currentActiveSessionUser.email === oldEmail;
                                 const demotingAdmin = target.position === 'Admin' && nextPosition !== 'Admin';
                                 const activeAdmins = globalRosterRepository.filter(u => u.position === 'Admin' && u.active !== false).length;
                                 if (demotingAdmin && activeAdmins <= 1) {
                                     notices.push("Role was NOT changed: this is the last active Admin account. Promote another Admin first.");
+                                } else if (isSelf && currentActiveSessionUser.position !== 'Admin') {
+                                    notices.push("Your own role cannot be changed. Ask an Admin.");
+                                } else if (!canAssignRole(nextPosition)) {
+                                    notices.push('Role was NOT changed: "' + nextPosition + '" has access your own role does not have. Only an Admin can grant that.');
                                 } else {
                                     target.position = nextPosition;
                                     target.department = nextPosition === "Admin"
@@ -9311,6 +9460,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         if (globalRosterRepository.some(u => (u.email || '').toLowerCase() === email.toLowerCase())) {
                             customAlert("A staff profile with that email already exists. Sign-in emails must be unique.");
+                            return;
+                        }
+
+                        if (!canAssignRole(pos)) {
+                            customAlert('You cannot create a profile with the role "' + pos + '": it has access your own role does not have. Only an Admin can grant that.');
                             return;
                         }
 
@@ -13414,6 +13568,20 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         scope.forEach(item => {
                             const isPending = item.status === "Pending Approval";
                             const isAllowedToApprove = isLeaveApprover;
+                            const leaveEndDate = item.toDate || item.date;
+                            const canManageThisLeave = (item.email === currentActiveSessionUser.email || isLeaveApprover)
+                                && item.status !== 'Rejected'
+                                && item.status !== 'Cancelled'
+                                && leaveEndDate >= leaveTodayIso();
+                            const actionButtons = [
+                                (isPending && isAllowedToApprove)
+                                    ? `<button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
+                                       <button class="action-btn" style="background:var(--danger); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Rejected');renderLeaveManagementPortlet()">Reject</button>`
+                                    : '',
+                                canManageThisLeave
+                                    ? `<button class="action-btn" style="background:var(--primary); padding:2px 5px; font-size:9px;" onclick="openLeaveModificationModal(${item.id})">✏️ Manage</button>`
+                                    : ''
+                            ].filter(Boolean).join('');
 
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
@@ -13424,16 +13592,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.toDate ? formatDateToDDMMYYYY(item.toDate) : formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.submittedAt ? formatDateToDDMMYYYY(item.submittedAt.split('T')[0]) : '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.note}</td>
-            <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;"><span class="badge ${item.status === 'Approved' ? 'badge-success' : item.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}" style="font-size: 8px; padding: 2px 5px;">${item.status}</span></td>
+            <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;"><span class="badge ${item.status === 'Approved' ? 'badge-success' : (item.status === 'Rejected' || item.status === 'Cancelled') ? 'badge-danger' : 'badge-warning'}" style="font-size: 8px; padding: 2px 5px;">${item.status}</span></td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.mcStatus ? `<span style="font-size:9px; font-weight:700; color:${item.mcStatus === 'With MC' ? 'var(--danger)' : 'var(--text-muted)'};">${item.mcStatus}</span>` : '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.approvedBy || '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">
-                ${(isPending && isAllowedToApprove) ? `
-                    <div style="display:flex; gap:2px;">
-                        <button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
-                        <button class="action-btn" style="background:var(--danger); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Rejected');renderLeaveManagementPortlet()">Reject</button>
-                    </div>
-                ` : `<span style="font-style:italic; opacity:0.6; font-size:9px;">—</span>`}
+                ${actionButtons ? `<div style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${actionButtons}</div>` : `<span style="font-style:italic; opacity:0.6; font-size:9px;">—</span>`}
             </td>
         `;
                             tbody.appendChild(tr);
@@ -14068,6 +14231,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     }
 
                     function auditLeaveRequestStatus(id, resolution) {
+                        if (!currentActiveSessionUser || !allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("Only a Leave Approver (Admin, General Manager, Head of Physio) can approve or reject leave.");
+                            return;
+                        }
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (item) {
                             item.status = resolution;
@@ -14106,6 +14273,220 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         synchronizeWorkspaceCoreStatus();
                         const trackTab = document.getElementById('ls_tab_tracking');
                         if (trackTab && trackTab.style.display !== 'none') renderLeaveTracking();
+                    }
+
+                    // ==========================================
+                    // CANCEL / RESCHEDULE LEAVE - future days only
+                    // ==========================================
+                    function leaveTodayIso() {
+                        const d = new Date();
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+
+                    function leaveAddDaysIso(iso, deltaDays) {
+                        const p = String(iso).split('-');
+                        const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+                        d.setDate(d.getDate() + deltaDays);
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+
+                    function adjustLeaveBalanceDelta(email, type, deltaDays) {
+                        const user = globalRosterRepository.find(u => u.email === email);
+                        if (!user || !deltaDays) return;
+                        const map = {
+                            'Sick Leave': 'sickBalance',
+                            'Annual Leave': 'annualBalance',
+                            'Family Leave': 'familyBalance',
+                            'Family Responsibility Leave': 'familyBalance',
+                            'Umrah Leave': 'umrahBalance',
+                            'Hajj Leave': 'hajjBalance',
+                            'No Paid Leave': 'noPaidBalance',
+                            'Maternity Leave': 'maternityBalance',
+                            'Paternity Leave': 'paternityBalance',
+                            'Special Leave': 'specialBalance'
+                        };
+                        const key = map[type];
+                        if (!key) return;
+                        user[key] = Math.max(0, (user[key] || 0) + deltaDays);
+                    }
+
+                    function canModifyLeaveRecord(item) {
+                        if (!currentActiveSessionUser || !item) return false;
+                        return item.email === currentActiveSessionUser.email ||
+                            allowedLeaveApproverRoles.includes(currentActiveSessionUser.position);
+                    }
+
+                    // Split the record into the part already taken (immutable) and the
+                    // part from today onwards (editable / cancellable).
+                    function splitLeaveBounds(item) {
+                        const from = item.fromDate || item.date;
+                        const to = item.toDate || item.date;
+                        const today = leaveTodayIso();
+                        const pastEnd = from < today ? leaveAddDaysIso(today, -1) : null;
+                        const pastDays = pastEnd ? calculateLeaveBusinessDays(from, pastEnd) : 0;
+                        const futureStart = from < today ? today : from;
+                        return { from, to, today, pastEnd, pastDays, futureStart };
+                    }
+
+                    function openLeaveModificationModal(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item) return;
+                        if (!canModifyLeaveRecord(item)) {
+                            customAlert("You can only change leave on your own record.");
+                            return;
+                        }
+                        if (item.status === 'Rejected') {
+                            customAlert("Rejected leave cannot be changed. Please submit a new request.");
+                            return;
+                        }
+                        if (item.status === 'Cancelled') {
+                            customAlert("This leave was already cancelled. Please submit a new request if needed.");
+                            return;
+                        }
+                        const b = splitLeaveBounds(item);
+                        if (b.to < b.today) {
+                            customAlert("This leave is fully in the past. Days already taken cannot be changed.");
+                            return;
+                        }
+
+                        const mount = document.getElementById('systemGlobalModalMount');
+                        mount.innerHTML = `
+        <div class="system-inline-modal-overlay">
+            <div class="system-inline-modal-box" style="width:440px;">
+                <h3 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">✏️ Manage Leave: ${item.employee}</h3>
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+                    ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
+                    Status: <strong>${item.status}</strong>
+                    ${b.pastDays > 0 ? `<br>Already taken (locked): <strong>${b.pastDays} day(s)</strong> up to ${formatDateToDDMMYYYY(b.pastEnd)}` : ''}
+                </div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>New Start Date</label>
+                    <input type="date" id="leaveModFrom" min="${b.today}" value="${b.futureStart}">
+                </div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>New End Date</label>
+                    <input type="date" id="leaveModTo" min="${b.today}" value="${b.to}">
+                </div>
+                <div style="font-size:9px; color:var(--text-muted); margin-bottom:10px;">
+                    Only today and future days can be changed. Days already taken stay recorded. Rescheduled leave goes back for approval.
+                </div>
+                <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px;">
+                    <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Close</button>
+                    <button class="action-btn" style="background:var(--danger);" onclick="cancelLeaveRemainingDays(${id})">Cancel Remaining Days</button>
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeaveReschedule(${id})">Save New Dates</button>
+                </div>
+            </div>
+        </div>`;
+                    }
+
+                    function commitLeaveReschedule(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item || !canModifyLeaveRecord(item)) return;
+                        const b = splitLeaveBounds(item);
+
+                        const newFrom = document.getElementById('leaveModFrom').value;
+                        const newTo = document.getElementById('leaveModTo').value;
+                        if (!newFrom || !newTo) { customAlert("Please pick both the new start and end date."); return; }
+                        if (newFrom < b.today) { customAlert("The new start date cannot be in the past."); return; }
+                        if (newTo < newFrom) { customAlert("End date cannot be before the start date."); return; }
+
+                        const duration = calculateLeaveBusinessDays(newFrom, newTo);
+                        if (!duration || duration < 1) {
+                            customAlert("That range has no working days (Fridays and public holidays are excluded).");
+                            return;
+                        }
+
+                        const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+                        const oldRange = formatDateToDDMMYYYY(b.from) + ' → ' + formatDateToDDMMYYYY(b.to);
+                        const originalNote = item.note || '';
+                        const originalDuration = item.duration || calculateLeaveBusinessDays(b.from, b.to) || 0;
+                        const remainingOriginal = Math.max(0, originalDuration - b.pastDays);
+
+                        // An approved leave already consumed its full duration from the
+                        // balance. Give back the portion being rescheduled - it is deducted
+                        // again only if the new request gets approved.
+                        if (item.status === 'Approved' && remainingOriginal > 0) {
+                            adjustLeaveBalanceDelta(item.email, item.type, remainingOriginal);
+                        }
+
+                        if (b.pastDays > 0) {
+                            item.fromDate = b.from;
+                            item.toDate = b.pastEnd;
+                            item.duration = b.pastDays;
+                            item.date = b.from;
+                            item.note = (item.note || '') + ` [${b.pastDays}d already taken kept; remainder rescheduled ${stamp}]`;
+                            globalLeaveRepository.push({
+                                id: Date.now() + Math.floor(Math.random() * 1000),
+                                email: item.email,
+                                employee: item.employee,
+                                type: item.type,
+                                duration: duration,
+                                date: newFrom,
+                                fromDate: newFrom,
+                                toDate: newTo,
+                                mcStatus: item.mcStatus || '',
+                                note: `Rescheduled from ${oldRange} on ${stamp}. Original note: ${originalNote}`,
+                                status: 'Pending Approval',
+                                submittedAt: new Date().toISOString(),
+                                approvedBy: null
+                            });
+                        } else {
+                            item.fromDate = newFrom;
+                            item.toDate = newTo;
+                            item.date = newFrom;
+                            item.duration = duration;
+                            item.status = 'Pending Approval';
+                            item.approvedBy = null;
+                            item.submittedAt = new Date().toISOString();
+                            item.note = (item.note || '') + ` [Rescheduled from ${oldRange} on ${stamp}]`;
+                        }
+
+                        closeSystemModalBox();
+                        customAlert(`Leave rescheduled to ${formatDateToDDMMYYYY(newFrom)} → ${formatDateToDDMMYYYY(newTo)} (${duration}d). It now waits for approval.`);
+                        persistCoreStores();
+                        synchronizeWorkspaceCoreStatus();
+                        renderLeaveManagementPortlet();
+                    }
+
+                    function cancelLeaveRemainingDays(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item || !canModifyLeaveRecord(item)) return;
+                        const b = splitLeaveBounds(item);
+                        if (b.to < b.today) { customAlert("This leave is fully in the past and cannot be cancelled."); return; }
+
+                        const originalDuration = item.duration || calculateLeaveBusinessDays(b.from, b.to) || 0;
+                        const remainingDays = b.pastDays > 0
+                            ? Math.max(0, originalDuration - b.pastDays)
+                            : originalDuration;
+                        customConfirm(`Cancel ${remainingDays} remaining day(s) of ${item.type} from ${formatDateToDDMMYYYY(b.futureStart)}? Days already taken stay recorded.`, function () {
+                            const live = globalLeaveRepository.find(l => l.id === id);
+                            if (!live) return;
+                            const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+
+                            // Approved leave already deducted its duration - give the
+                            // cancelled portion back to the balance.
+                            if (live.status === 'Approved' && remainingDays > 0) {
+                                adjustLeaveBalanceDelta(live.email, live.type, remainingDays);
+                            }
+
+                            if (b.pastDays > 0) {
+                                live.fromDate = b.from;
+                                live.toDate = b.pastEnd;
+                                live.duration = b.pastDays;
+                                live.date = b.from;
+                                live.note = (live.note || '') + ` [Remaining ${remainingDays}d cancelled ${stamp}]`;
+                            } else {
+                                // Keep the row for the audit trail instead of deleting it.
+                                live.status = 'Cancelled';
+                                live.note = (live.note || '') + ` [Cancelled ${stamp}]`;
+                            }
+
+                            closeSystemModalBox();
+                            customAlert(`Remaining ${remainingDays} day(s) cancelled.${b.pastDays > 0 ? ' The days already taken remain recorded.' : ''}`);
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderLeaveManagementPortlet();
+                        });
                     }
 
                     // Define profile state variables
