@@ -8464,7 +8464,8 @@
                         container.innerHTML = "";
 
                         globalRosterRepository.forEach(staff => {
-                            const isProbation = isStaffWithinProbationTimeline(staff.hireDate);
+                            const probationEndIso = getProbationEndIso(staff);
+                            const isProbation = isStaffWithinProbationTimeline(staff);
 
                             // Calculate status alert colors for all expiry parameters
                             const idExpState = getComplianceAlertState(staff.idCardExpiry);
@@ -8569,7 +8570,7 @@
                                 <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; overflow:hidden;">
                                     <span class="badge badge-primary">${lookupTranslationValue(staff.position)}</span>
                                     <span class="badge badge-dark">${staff.style}</span>
-                                    ${isProbation ? '<span class="badge badge-warning">Probation</span>' : ''}
+                                    ${isProbation ? `<span class="badge badge-warning" title="Probation ends ${formatDateToDDMMYYYY(probationEndIso)}">Probation</span>` : ''}
                                     ${hasExpiringDocs ? '<span class="badge badge-danger">Expiring Soon</span>' : ''}
                                 </div>
                             </div>
@@ -8709,11 +8710,108 @@
                         customAlert("Password reset successfully for " + staff.name + ".");
                     }
 
-                    function isStaffWithinProbationTimeline(hireDateString) {
-                        if (!hireDateString) return false;
-                        const hire = new Date(hireDateString);
-                        const limit = new Date(hire.setMonth(hire.getMonth() + 3));
-                        return new Date() < limit;
+                    // Probation is driven by the real joining date (hireDate is only a
+                    // fallback for old records). Staff Editors can override the end date
+                    // per person, which is how a probation mark is removed or extended.
+                    function addMonthsToIso(iso, months) {
+                        const normalized = toIsoDateLocal(iso);
+                        const p = normalized.split('-');
+                        if (p.length !== 3) return '';
+                        const year = parseInt(p[0]), month = parseInt(p[1]) - 1, day = parseInt(p[2]);
+                        const d = new Date(year, month, day);
+                        if (isNaN(d.getTime())) return '';
+                        d.setDate(1);
+                        d.setMonth(d.getMonth() + months);
+                        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                        d.setDate(Math.min(day, lastDay));
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+
+                    // Accepts ISO (2024-03-15) and imported formats (15/03/2024, 3/15/2024).
+                    function toIsoDateLocal(value) {
+                        if (!value) return '';
+                        const raw = String(value).trim();
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+                        const slash = raw.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/);
+                        if (slash) {
+                            let first = parseInt(slash[1]), second = parseInt(slash[2]);
+                            // Day-first when it cannot be a month, otherwise follow the
+                            // app-wide M/D/YYYY convention for slashed dates.
+                            const day = first > 12 ? first : second;
+                            const month = first > 12 ? second : first;
+                            return slash[3] + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+                        }
+                        const d = new Date(raw);
+                        if (isNaN(d.getTime())) return '';
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+
+                    function getProbationStartIso(staff) {
+                        if (!staff) return '';
+                        return toIsoDateLocal(staff.joiningDate || staff.hireDate || '');
+                    }
+
+                    function getProbationEndIso(staff) {
+                        if (!staff) return '';
+                        if (staff.probationEndDate) return toIsoDateLocal(staff.probationEndDate) || staff.probationEndDate;
+                        const start = getProbationStartIso(staff);
+                        return start ? addMonthsToIso(start, 3) : '';
+                    }
+
+                    function isStaffWithinProbationTimeline(staff) {
+                        const end = getProbationEndIso(staff);
+                        if (!end) return false;
+                        return leaveTodayIso() <= end;
+                    }
+
+                    function probationSummaryHtml(staff) {
+                        const start = getProbationStartIso(staff);
+                        const end = getProbationEndIso(staff);
+                        if (!end) {
+                            return '<span style="color:var(--text-muted);">No Joining Date set — the probation badge is hidden.</span>';
+                        }
+                        if (leaveTodayIso() <= end) {
+                            return `<span class="badge badge-warning" style="font-size:9px;">Probation</span> until <strong>${formatDateToDDMMYYYY(end)}</strong>`
+                                + (start ? ` <span style="color:var(--text-muted);">(joined ${formatDateToDDMMYYYY(start)})</span>` : '');
+                        }
+                        return `<span class="badge badge-success" style="font-size:9px;">Not on probation</span> — ended ${formatDateToDDMMYYYY(end)}`;
+                    }
+
+                    function setStaffProbationEnd(email, isoDate, confirmLabel) {
+                        if (!canManageStaffRoles()) {
+                            customAlert("Only a Staff Editor (Admin, General Manager, Asst. Operations Manager) can change probation status.");
+                            return;
+                        }
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return;
+                        if (isoDate) {
+                            staff.probationEndDate = isoDate;
+                        } else {
+                            delete staff.probationEndDate;
+                            delete staff.probationConfirmedAt;
+                            delete staff.probationConfirmedBy;
+                        }
+                        if (confirmLabel) {
+                            staff.probationConfirmedAt = new Date().toISOString();
+                            staff.probationConfirmedBy = currentActiveSessionUser ? currentActiveSessionUser.email : '';
+                        }
+                        const input = document.getElementById('mUpProbationEnd');
+                        if (input) input.value = getProbationEndIso(staff);
+                        const summary = document.getElementById('mUpProbationSummary');
+                        if (summary) {
+                            summary.innerHTML = probationSummaryHtml(staff)
+                                + (confirmLabel ? ` <span style="color:var(--success); font-weight:700;">✓ ${confirmLabel}</span>` : '');
+                        }
+                        persistCoreStores();
+                        renderStaffComplianceDirectory();
+                    }
+
+                    function removeStaffProbationMark(email) {
+                        setStaffProbationEnd(email, leaveAddDaysIso(leaveTodayIso(), -1), 'Probation mark removed.');
+                    }
+
+                    function resetStaffProbationMark(email) {
+                        setStaffProbationEnd(email, '', 'Reset to Joining Date + 3 months.');
                     }
 
                     function getComplianceAlertState(dateStr) {
@@ -8902,6 +9000,19 @@
                     <div class="form-group"><label>Position / Role</label>${positionFieldHtml}</div>
                     <div class="form-group"><label>Contract / Style</label><select id="mUpStyle"><option value="Full-Time" ${staff.style === 'Full-Time' ? 'selected' : ''}>Full-Time</option><option value="Part-Time" ${staff.style === 'Part-Time' ? 'selected' : ''}>Part-Time</option></select></div>
 
+                    <div class="form-group" style="grid-column: span 2; border-top:1px solid var(--border); padding-top:10px;">
+                        <label>Probation Status</label>
+                        <div id="mUpProbationSummary" style="font-size:11px; color:var(--text-body); margin:4px 0 6px;">${probationSummaryHtml(staff)}</div>
+                        ${canEditRole ? `
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <input type="date" id="mUpProbationEnd" value="${getProbationEndIso(staff)}" style="max-width:170px;">
+                            <button type="button" class="action-btn" style="background:var(--success); padding:4px 8px; font-size:10px;" onclick="removeStaffProbationMark('${staff.email}')">✓ Remove Probation Mark</button>
+                            <button type="button" class="action-btn" style="background:var(--text-muted); padding:4px 8px; font-size:10px;" onclick="resetStaffProbationMark('${staff.email}')">↺ Default (Joining + 3 months)</button>
+                        </div>
+                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">The badge disappears when this date is before today. Saving the profile also stores the date above.</div>
+                        ` : `<div style="font-size:9px; color:var(--text-muted);">Only a Staff Editor can change probation status.</div>`}
+                    </div>
+
                     <!-- Health License Toggle & fields -->
                     <div class="form-group">
                         <label>Health License</label>
@@ -8987,6 +9098,16 @@ ${extraInputsHtml}
                                 target[field.key] = inputEl.value.trim();
                             }
                         });
+
+                        // Probation end date (Staff Editor only). Empty means "derive
+                        // from Joining Date + 3 months".
+                        if (canEditRole) {
+                            const probEl = document.getElementById('mUpProbationEnd');
+                            if (probEl) {
+                                if (probEl.value) target.probationEndDate = probEl.value;
+                                else delete target.probationEndDate;
+                            }
+                        }
 
                         if (!target.extraFieldsData) target.extraFieldsData = {};
                         dynamicCustomStaffFields.forEach(f => {
@@ -9509,7 +9630,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             visaExpiry: visaExpiry,
                             passportExpiry: passportExpiry,
                             accentColor: "#004b87",
-                            hireDate: new Date().toISOString().split('T')[0],
+                            hireDate: joiningDate || new Date().toISOString().split('T')[0],
                             sickBalance: style === "Full-Time" ? 30 : 0,
                             annualBalance: style === "Full-Time" ? 30 : 0,
                             familyBalance: style === "Full-Time" ? 15 : 0,
