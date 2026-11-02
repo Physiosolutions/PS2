@@ -8927,6 +8927,18 @@
                         return Array.isArray(allowedSystemConfiguratorRoles) && allowedSystemConfiguratorRoles.includes(role);
                     }
 
+                    // The Permissions & Access tab must never render as an empty page:
+                    // show the lock notice instead of the three configuration cards.
+                    function applyAdminPermissionsVisibility() {
+                        const canCfg = canConfigureSystem();
+                        ['adminCardAccessMatrix', 'adminCardRoleManager', 'adminCardUnifiedAuth'].forEach(cardId => {
+                            const card = document.getElementById(cardId);
+                            if (card) card.style.display = canCfg ? '' : 'none';
+                        });
+                        const deniedCard = document.getElementById('adminCardPermissionsDenied');
+                        if (deniedCard) deniedCard.style.display = canCfg ? 'none' : '';
+                    }
+
                     // A staff editor may hand out a role only if that role gives no
                     // access their own role lacks. Only an Admin may create Admins.
                     function canAssignRole(nextPosition) {
@@ -15304,11 +15316,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             renderPortalWorkspaceSwitcher();
                             renderSidebarOrderingPanel();
                             refreshDictionaryInlineStats();
-                            const canCfg = canConfigureSystem();
-                            ['adminCardAccessMatrix', 'adminCardRoleManager', 'adminCardUnifiedAuth'].forEach(cardId => {
-                                const card = document.getElementById(cardId);
-                                if (card) card.style.display = canCfg ? '' : 'none';
-                            });
+                            applyAdminPermissionsVisibility();
                             const tableSelector = document.getElementById('builderTableSelector');
                             if (tableSelector) {
                                 loadActiveSchemaStructure(tableSelector.value);
@@ -19379,6 +19387,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             targetContent.classList.remove('hidden');
                             targetContent.style.display = '';
                             setTimeout(initColorSwatches, 50);
+                            if (tabName === 'roles') applyAdminPermissionsVisibility();
                             if (tabName === 'schema') {
                                 setTimeout(refreshDictionaryInlineStats, 100);
                                 setTimeout(renderQuickActionsEditor, 50);
