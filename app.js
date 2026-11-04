@@ -6718,6 +6718,7 @@
             <!-- LEAVE REQUEST VERIFICATION QUEUE -->
             <div class="module-card span-12" style="margin-top: 12px;">
                 <h3 class="admin-section-title">🌴 Leave Request Verification Queue</h3>
+                <div style="font-size:10px;color:var(--text-muted);margin:-4px 0 8px;">Only requests awaiting verification are listed. Approved, rejected and cancelled records stay in Leave Management.</div>
                 <div style="overflow-x:auto;">
                     <table class="premium-table" style="table-layout:auto;">
                         <thead>
@@ -19247,15 +19248,16 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     function renderDashboardLeaveVerificationQueue() {
                         const tbody = document.getElementById('dashboardLeaveVerificationBody');
                         if (!tbody) return;
+                        tbody.innerHTML = "";
                         if (!currentActiveSessionUser || !currentActiveSessionUser.position) return;
                         const userPos = currentActiveSessionUser.position;
-                        const canViewAll = allowedManagementDashboardRoles.includes(userPos) || allowedLeaveApproverRoles.includes(userPos);
                         const canApprove = allowedLeaveApproverRoles.includes(userPos);
-                        const allLeaves = canViewAll
-                            ? globalLeaveRepository.filter(l => l.email === currentActiveSessionUser.email || l.status === 'Pending Approval')
-                            : globalLeaveRepository.filter(l => l.email === currentActiveSessionUser.email);
+                        // This queue is an action list: only requests still awaiting verification belong here.
+                        // Approved / Rejected / Cancelled records stay in the Leave Management table,
+                        // never in the dashboard queue.
+                        const allLeaves = globalLeaveRepository.filter(l => l.status === 'Pending Approval');
                         if (allLeaves.length === 0) {
-                            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);font-style:italic;">No leave requests found.</td></tr>`;
+                            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);font-style:italic;">No leave requests awaiting verification.</td></tr>`;
                             return;
                         }
                         allLeaves.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
