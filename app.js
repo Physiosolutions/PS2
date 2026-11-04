@@ -6963,7 +6963,7 @@
                             { key: 'managementDashboard', label: '📊 Management Dashboard', note: 'Which roles see management sections (export all records, modify compliance, discharge exports)' },
                             { key: 'staffExpiryViewer', label: '👁️ Staff Expiry Viewer', note: 'Who can see ALL staff document expiries in the Operations Alert Cockpit (others see only their own)' },
                             { key: 'patientTracker', label: '👤 Patient Tracker', note: 'Who can access the Patient Prescription & Session Tracker tab in FDO Sheets' },
-                            { key: 'passwordReset', label: '🔑 Password Reset', note: 'Which roles can reset staff account passwords from the Personnel Directory' }
+                            { key: 'passwordReset', label: '🔑 Password Reset', note: 'Which Staff Editor roles can reset staff account passwords from the Personnel Directory' }
                         ];
 
                         const roleArrays = {
@@ -8113,22 +8113,60 @@
                             return;
                         }
                         staffProfileChangesetPipeline.forEach(req => {
+                            const targetStaff = globalRosterRepository.find(u => u.email === req.email);
+                            const changeLabels = {
+                                name: 'Full Legal Name', phone: 'Mobile Phone', email: 'Email Address',
+                                username: 'Username', emergencyContact: 'Emergency Contact',
+                                healthLicence: 'Health License No.', healthLicenceExpiry: 'License Expiry',
+                                quotaActive: 'Quota Status', quotaNumber: 'Quota Number', quotaExpiry: 'Quota Expiry',
+                                position: 'Position / Role', style: 'Contract / Style',
+                                dob: 'Date of Birth', idCard: 'ID Card Number', idCardExpiry: 'ID Card Expiry',
+                                visaExpiry: 'Visa Expiry', passportExpiry: 'Passport Expiry',
+                                joiningDate: 'Joining Date', contractExpiryDate: 'Contract Expiry Date',
+                                lastDayOfWorking: 'Last Day of Working', probationEndDate: 'Probation End Date'
+                            };
+                            const labelFor = (key) => changeLabels[key] || key
+                                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                                .replace(/^./, c => c.toUpperCase());
+                            const asText = (v) => (v === null || v === undefined) ? '' : String(v);
+                            const currentValueOf = (key) => targetStaff ? targetStaff[key] : undefined;
+                            const formatChangeValue = (key, value) => {
+                                if (key === 'quotaActive') return value ? 'Active' : 'Inactive';
+                                return String(value);
+                            };
+                            const renderChangeLine = (label, text) => {
+                                const shown = text === ''
+                                    ? '<em style="opacity:.65;">(cleared)</em>'
+                                    : `<span style="color:var(--danger);">${escHtml(text)}</span>`;
+                                return `<div style="margin-bottom:3px;"><strong>${escHtml(label)}:</strong> ${shown}</div>`;
+                            };
+
                             let changesText = "";
                             for (let key in req.requestedChanges) {
+                                const value = req.requestedChanges[key];
                                 if (key === 'photoUrl') {
-                                    if (req.requestedChanges[key]) {
-                                        changesText += `<div><strong>Photo Change Requested:</strong> <span style="color:var(--success);">Image Array Submitted</span></div>`;
+                                    if (asText(value) && asText(value) !== asText(currentValueOf('photoUrl'))) {
+                                        changesText += `<div style="margin-bottom:3px;"><strong>Profile Photo:</strong> <span style="color:var(--success);">New image submitted</span></div>`;
                                     }
                                 } else if (key === 'extraFieldsData') {
-                                    const extras = req.requestedChanges[key];
+                                    const extras = value || {};
+                                    const currentExtras = (targetStaff && targetStaff.extraFieldsData) || {};
                                     for (let extId in extras) {
-                                        const fieldDef = dynamicCustomStaffFields.find(f => f.id === extId);
-                                        const label = fieldDef ? fieldDef.label : extId;
-                                        changesText += `<div><strong>${label}:</strong> <span style="color:var(--primary);">${extras[extId]}</span></div>`;
+                                        if (asText(extras[extId]) === asText(currentExtras[extId])) continue;
+                                        const fieldDef = dynamicCustomStaffFields.find(f => f.id === extId.replace(/_expiry$/, ''));
+                                        const baseLabel = fieldDef ? fieldDef.label : labelFor(extId.replace(/_expiry$/, ''));
+                                        const label = /_expiry$/.test(extId) ? baseLabel + ' Expiry' : baseLabel;
+                                        changesText += renderChangeLine(label, asText(extras[extId]));
                                     }
                                 } else {
-                                    changesText += `<div><strong>${key}:</strong> <span style="color:var(--danger);">${req.requestedChanges[key]}</span></div>`;
+                                    // Only show fields that actually differ from the current
+                                    // record, so unchanged defaults do not clutter the audit.
+                                    if (asText(value) === asText(currentValueOf(key))) continue;
+                                    changesText += renderChangeLine(labelFor(key), asText(formatChangeValue(key, value)));
                                 }
+                            }
+                            if (!changesText) {
+                                changesText = `<span style="font-style:italic; opacity:.7; font-size:10px;">No net changes detected.</span>`;
                             }
 
                             const isAuthorizedToAudit = allowedProfileApproverRoles.includes(currentActiveSessionUser.position);
@@ -8622,7 +8660,7 @@
                       </div>
                   </div>
                     <div style="border-top:1px solid var(--border); padding-top:8px; margin-top:0; display:flex; flex-direction:column; gap:6px;">
-                        ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
+                        ${canResetStaffPasswords() ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
                         ${canManageStaffRoles() ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
                 `;
@@ -8677,8 +8715,8 @@
                     }
 
                     function openStaffPasswordReset(email) {
-                        if (!allowedPasswordResetRoles.includes(currentActiveSessionUser.position)) {
-                            customAlert("You do not have permission to reset passwords.");
+                        if (!canResetStaffPasswords()) {
+                            customAlert("Only a Staff Editor with Password Reset permission can reset passwords.");
                             return;
                         }
                         const staff = globalRosterRepository.find(u => u.email === email);
@@ -8706,8 +8744,8 @@
                     }
 
                     function commitStaffPasswordReset(email) {
-                        if (!allowedPasswordResetRoles.includes(currentActiveSessionUser.position)) {
-                            customAlert("You do not have permission to reset passwords.");
+                        if (!canResetStaffPasswords()) {
+                            customAlert("Only a Staff Editor with Password Reset permission can reset passwords.");
                             return;
                         }
                         const p1 = document.getElementById('staffResetPassInput').value;
@@ -8939,6 +8977,15 @@
                         if (!currentActiveSessionUser) return false;
                         const role = currentActiveSessionUser.position;
                         return Array.isArray(allowedStaffEditorRoles) && allowedStaffEditorRoles.includes(role);
+                    }
+
+                    // Resetting a password is a staff-account operation, so a role needs
+                    // both the Password Reset permission and Staff Editor access.
+                    function canResetStaffPasswords() {
+                        if (!currentActiveSessionUser) return false;
+                        return canManageStaffRoles()
+                            && Array.isArray(allowedPasswordResetRoles)
+                            && allowedPasswordResetRoles.includes(currentActiveSessionUser.position);
                     }
 
                     // Who may change the permission matrix, or create/rename/delete roles.
