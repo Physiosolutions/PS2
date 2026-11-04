@@ -8623,7 +8623,7 @@
                   </div>
                     <div style="border-top:1px solid var(--border); padding-top:8px; margin-top:0; display:flex; flex-direction:column; gap:6px;">
                         ${allowedPasswordResetRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openStaffPasswordReset('${staff.email}')">🔑 Reset Password</button>` : ''}
-                        ${currentActiveSessionUser.email === staff.email || allowedManagementDashboardRoles.includes(currentActiveSessionUser.position) ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
+                        ${canManageStaffRoles() ? `<button class="action-btn" style="width:100%; justify-content:center;" onclick="openRosterUpdatePanel('${staff.email}')">✏️ Modify Compliance parameters</button>` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Read-Only Data Record</span>`}
                     </div>
                 `;
                             container.appendChild(card);
@@ -8973,6 +8973,10 @@
                     }
 
                     function openRosterUpdatePanel(email) {
+                        if (!canManageStaffRoles()) {
+                            customAlert("Only a Staff Editor can edit staff profiles, roles and employment details.");
+                            return;
+                        }
                         const staff = globalRosterRepository.find(u => u.email === email);
                         if (!staff) return;
                         modifyStaffPhotoBase64 = "";
@@ -9011,6 +9015,7 @@
                         });
 
                         const canEditRole = canManageStaffRoles();
+                        const editorRolesLabel = (allowedStaffEditorRoles || []).join(', ') || 'an administrator';
                         const roleOptionsHtml = Object.keys(globalRolePermissionsMatrix).map(r => '<option value="' + r + '" ' + (staff.position === r ? 'selected' : '') + '>' + lookupTranslationValue(r) + '</option>').join('');
                         const emailFieldHtml = canEditRole
                             ? `<input type="email" id="mUpEmail" value="${staff.email || ''}">`
@@ -9018,7 +9023,7 @@
                         const positionFieldHtml = canEditRole
                             ? `<select id="mUpPos">${roleOptionsHtml}</select>`
                             : `<select id="mUpPos" disabled title="Only a Staff Editor can change a role">${roleOptionsHtml}</select>
-                               <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">🔒 Positions and sign-in emails can only be changed by a Staff Editor (Admin, General Manager, Asst. Operations Manager).</div>`;
+                               <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">🔒 Positions and sign-in emails can only be changed by a Staff Editor (${editorRolesLabel}).</div>`;
 
                         const mount = document.getElementById('systemGlobalModalMount');
                         mount.innerHTML = `
@@ -9101,6 +9106,10 @@ ${extraInputsHtml}
                     }
 
                     function commitRosterUpdateDirectly(email) {
+                        if (!canManageStaffRoles()) {
+                            customAlert("Only a Staff Editor can edit staff profiles, roles and employment details.");
+                            return;
+                        }
                         const target = globalRosterRepository.find(u => u.email === email);
                         if (!target) { closeSystemModalBox(); return; }
 
@@ -12566,6 +12575,28 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                     // ===== FRL MATRIX =====
                     let frlMatrixSelectedRoles = [];
+                    function frlIsoDate(d) {
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+                    // FRL is counted in working days, matching calculateLeaveBusinessDays():
+                    // Fridays and public holidays are not leave days.
+                    function buildFrlDayEntries(leaves) {
+                        const dayEntries = [];
+                        leaves.forEach(l => {
+                            const from = l.fromDate || l.date;
+                            const to = l.toDate || l.date;
+                            let d = new Date(from + 'T12:00:00');
+                            const end = new Date(to + 'T12:00:00');
+                            while (d <= end) {
+                                const iso = frlIsoDate(d);
+                                if (d.getDay() !== 5 && !isPSCalHoliday(iso)) {
+                                    dayEntries.push({ email: l.email, date: iso, duration: 1 });
+                                }
+                                d.setDate(d.getDate() + 1);
+                            }
+                        });
+                        return dayEntries;
+                    }
                     function populateFrlMatrixYearSelect() {
                         const sel = document.getElementById('frlMatrixYearSelect');
                         if (!sel || sel.options.length > 0) return;
@@ -12651,18 +12682,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             l.status === 'Approved' &&
                             l.date && l.date.startsWith(year)
                         );
-                        const dayEntries = [];
+                        const dayEntries = buildFrlDayEntries(frlLeaves);
                         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                        frlLeaves.forEach(l => {
-                            const from = l.fromDate || l.date;
-                            const to = l.toDate || l.date;
-                            let d = new Date(from + 'T12:00:00');
-                            const end = new Date(to + 'T12:00:00');
-                            while (d <= end) {
-                                dayEntries.push({ email: l.email, date: d.toISOString().slice(0, 10), duration: 1 });
-                                d.setDate(d.getDate() + 1);
-                            }
-                        });
                         const byDate = {};
                         dayEntries.forEach(e => {
                             if (!byDate[e.date]) byDate[e.date] = {};
@@ -12710,17 +12731,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const frlLeaves = (globalLeaveRepository || []).filter(l =>
                             (l.type === 'Family Leave' || l.type === 'Family Responsibility Leave') && l.status === 'Approved' && l.date && l.date.startsWith(year)
                         );
-                        const dayEntries = [];
-                        frlLeaves.forEach(l => {
-                            const from = l.fromDate || l.date;
-                            const to = l.toDate || l.date;
-                            let d = new Date(from + 'T12:00:00');
-                            const end = new Date(to + 'T12:00:00');
-                            while (d <= end) {
-                                dayEntries.push({ email: l.email, date: d.toISOString().slice(0, 10), duration: 1 });
-                                d.setDate(d.getDate() + 1);
-                            }
-                        });
+                        const dayEntries = buildFrlDayEntries(frlLeaves);
                         const byDate = {};
                         dayEntries.forEach(e => {
                             if (!byDate[e.date]) byDate[e.date] = {};
@@ -12753,14 +12764,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const frlLeaves = (globalLeaveRepository || []).filter(l =>
                             (l.type === 'Family Leave' || l.type === 'Family Responsibility Leave') && l.status === 'Approved' && l.date && l.date.startsWith(year)
                         );
-                        const dayEntries = [];
-                        frlLeaves.forEach(l => {
-                            const from = l.fromDate || l.date;
-                            const to = l.toDate || l.date;
-                            let d = new Date(from + 'T12:00:00');
-                            const end = new Date(to + 'T12:00:00');
-                            while (d <= end) { dayEntries.push({ email: l.email, date: d.toISOString().slice(0, 10), duration: 1 }); d.setDate(d.getDate() + 1); }
-                        });
+                        const dayEntries = buildFrlDayEntries(frlLeaves);
                         const byDate = {};
                         dayEntries.forEach(e => {
                             if (!byDate[e.date]) byDate[e.date] = {};
@@ -13735,6 +13739,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                     : '',
                                 canManageThisLeave
                                     ? `<button class="action-btn" style="background:var(--primary); padding:2px 5px; font-size:9px;" onclick="openLeaveModificationModal(${item.id})">✏️ Manage</button>`
+                                    : '',
+                                canDeleteLeaveRecord(item)
+                                    ? `<button class="action-btn" style="background:var(--danger); padding:2px 5px; font-size:9px;" title="Delete this leave record" onclick="deleteLeaveRecord(${item.id})">🗑️</button>`
                                     : ''
                             ].filter(Boolean).join('');
 
@@ -14638,6 +14645,56 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                             closeSystemModalBox();
                             customAlert(`Remaining ${remainingDays} day(s) cancelled.${b.pastDays > 0 ? ' The days already taken remain recorded.' : ''}`);
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderLeaveManagementPortlet();
+                        });
+                    }
+
+                    // Leave Approvers may remove any record; a staff member may only
+                    // remove their own rejected/cancelled test requests.
+                    function canDeleteLeaveRecord(item) {
+                        if (!currentActiveSessionUser || !item) return false;
+                        if (allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) return true;
+                        const status = String(item.status || '').toLowerCase();
+                        return item.email === currentActiveSessionUser.email
+                            && (status === 'rejected' || status === 'cancelled');
+                    }
+
+                    function deleteLeaveRecord(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item || !canDeleteLeaveRecord(item)) {
+                            customAlert("You cannot delete this leave record.");
+                            return;
+                        }
+                        const from = item.fromDate || item.date;
+                        const to = item.toDate || item.date;
+                        const refund = item.status === 'Approved' ? (item.duration || 0) : 0;
+                        const refundNote = refund > 0 ? ` ${refund} day(s) will be returned to the ${item.type} balance.` : '';
+                        customConfirm(`Permanently delete ${item.employee}'s ${item.type} record for ${formatDateToDDMMYYYY(from)} → ${formatDateToDDMMYYYY(to)}?${refundNote}`, function () {
+                            const live = globalLeaveRepository.find(l => l.id === id);
+                            if (!live) return;
+                            const liveFrom = live.fromDate || live.date;
+                            const liveTo = live.toDate || live.date;
+                            if (String(live.status || '').toLowerCase() === 'approved' && live.duration > 0) {
+                                adjustLeaveBalanceDelta(live.email, live.type, live.duration);
+                            }
+                            globalLeaveRepository = globalLeaveRepository.filter(l => l.id !== id);
+
+                            // Remove the mirrored row from the printable leave tracker too.
+                            const cat = getCategoryForStaff(live.email);
+                            if (cat) {
+                                const data = getLeaveTrackingData()[cat] || [];
+                                const filtered = data.filter(r => !(r.name === live.employee && r.type === live.type && r.dateFrom === liveFrom && r.dateTo === liveTo));
+                                if (filtered.length !== data.length) {
+                                    leaveTrackingData[cat] = filtered;
+                                    saveLeaveTrackingData();
+                                    renderLeaveTracking();
+                                }
+                            }
+
+                            closeSystemModalBox();
+                            customAlert('Leave record deleted.' + (refund > 0 ? ` ${refund} day(s) returned to the balance.` : ''));
                             persistCoreStores();
                             synchronizeWorkspaceCoreStatus();
                             renderLeaveManagementPortlet();
