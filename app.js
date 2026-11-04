@@ -1814,6 +1814,81 @@
                     }
                     window.__loadCoreStores = loadCoreStores;
                     window.__persistCoreStores = persistCoreStores;
+                    // ===== LEAVE DELETION TOMBSTONES =====
+                    // Deleted leave records are remembered so a stale copy held by another
+                    // device cannot resurrect them through cloud sync.
+                    const LEGACY_PURGED_LEAVE_IDS = ['1793526454381'];
+                    const LEGACY_TEST_LEAVE_FILTERS = [
+                        // The rejected Sick Leave test for 29/06/2026 that was never real.
+                        { type: 'Sick Leave', date: '2026-06-29', status: 'Rejected', employee: 'hamza' }
+                    ];
+                    let purgedLeaveIds = [];
+
+                    function loadPurgedLeaveIds() {
+                        purgedLeaveIds = [];
+                        try {
+                            const raw = localStorage.getItem('physioPurgedLeaveIds');
+                            if (raw) {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed)) {
+                                    parsed.forEach(id => { if (id != null) purgedLeaveIds.push(String(id)); });
+                                }
+                            }
+                        } catch (e) { }
+                        LEGACY_PURGED_LEAVE_IDS.forEach(id => {
+                            if (purgedLeaveIds.indexOf(String(id)) === -1) purgedLeaveIds.push(String(id));
+                        });
+                    }
+
+                    function persistPurgedLeaveIds() {
+                        try { localStorage.setItem('physioPurgedLeaveIds', JSON.stringify(purgedLeaveIds)); } catch (e) { }
+                    }
+
+                    function markLeavePurged(id) {
+                        if (id == null) return;
+                        const key = String(id);
+                        if (purgedLeaveIds.indexOf(key) === -1) {
+                            purgedLeaveIds.push(key);
+                            persistPurgedLeaveIds();
+                        }
+                    }
+
+                    function isLegacyTestLeave(record) {
+                        if (!record) return false;
+                        const employee = String(record.employee || '').toLowerCase();
+                        return LEGACY_TEST_LEAVE_FILTERS.some(f =>
+                            String(record.type || '') === f.type
+                            && String(record.fromDate || record.date || '') === f.date
+                            && String(record.status || '') === f.status
+                            && employee.indexOf(f.employee) !== -1
+                        );
+                    }
+
+                    function purgeDeletedLeaveRecords() {
+                        if (!Array.isArray(globalLeaveRepository)) return false;
+                        const purgedSet = {};
+                        purgedLeaveIds.forEach(id => { purgedSet[id] = true; });
+                        const removed = globalLeaveRepository.filter(l => purgedSet[String(l.id)] || isLegacyTestLeave(l));
+                        if (removed.length === 0) return false;
+                        globalLeaveRepository = globalLeaveRepository.filter(l => !(purgedSet[String(l.id)] || isLegacyTestLeave(l)));
+                        removed.forEach(live => {
+                            markLeavePurged(live.id);
+                            const cat = (typeof getCategoryForStaff === 'function') ? getCategoryForStaff(live.email) : null;
+                            if (!cat || typeof getLeaveTrackingData !== 'function') return;
+                            const data = getLeaveTrackingData()[cat] || [];
+                            const from = live.fromDate || live.date;
+                            const to = live.toDate || live.date;
+                            const filtered = data.filter(r => !(r.name === live.employee && r.type === live.type && r.dateFrom === from && r.dateTo === to));
+                            if (filtered.length !== data.length) {
+                                leaveTrackingData[cat] = filtered;
+                                saveLeaveTrackingData();
+                                if (typeof renderLeaveTracking === 'function') renderLeaveTracking();
+                            }
+                        });
+                        try { localStorage.setItem('physioGlobalLeaveRepository', JSON.stringify(globalLeaveRepository)); } catch (e) { }
+                        return true;
+                    }
+
                     function loadCoreStores() {
                         try {
                             const _f = localStorage.getItem('physioFollowupCasesRepository');
@@ -1881,6 +1956,14 @@
                         } catch (e) { }
                         // Drop notifications and banners older than 24 hours on load.
                         if (pruneExpiredNotifications()) persistCoreStores();
+                        // Remove leave records that were deleted (or are legacy test data).
+                        loadPurgedLeaveIds();
+                        if (purgeDeletedLeaveRecords()) {
+                            if (typeof synchronizeWorkspaceCoreStatus === 'function') synchronizeWorkspaceCoreStatus();
+                            if (typeof renderLeaveManagementPortlet === 'function') {
+                                try { renderLeaveManagementPortlet(); } catch (e) { }
+                            }
+                        }
                     }
                     let staffProfileChangesetPipeline = [];
                     let systemAlertLogs = [];
@@ -14816,6 +14899,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 adjustLeaveBalanceDelta(live.email, live.type, live.duration);
                             }
                             globalLeaveRepository = globalLeaveRepository.filter(l => l.id !== id);
+                            // Tombstone the id so cloud sync on another device cannot bring it back.
+                            markLeavePurged(live.id);
 
                             // Remove the mirrored row from the printable leave tracker too.
                             const cat = getCategoryForStaff(live.email);
