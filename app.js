@@ -11817,17 +11817,25 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         function buildLeaveSummaryCards(leaves) {
                             const byType = {};
                             let approved = 0, pending = 0, rejected = 0;
+                            const statusKey = s => String(s || '').trim().toLowerCase();
                             leaves.forEach(l => {
                                 const d = l.duration || 1;
-                                const t = l.type || 'Unknown';
-                                if (!byType[t]) byType[t] = 0;
-                                byType[t] += d;
-                                if (l.status === 'Approved') approved += d;
-                                else if (l.status === 'Pending') pending += d;
-                                else if (l.status === 'Rejected') rejected += d;
+                                const st = statusKey(l.status);
+                                // Only approved leave counts as days taken. Pending,
+                                // rejected and cancelled requests must not inflate the
+                                // per-type cards (they have their own counters).
+                                if (st === 'approved') {
+                                    const t = l.type || 'Unknown';
+                                    byType[t] = (byType[t] || 0) + d;
+                                    approved += d;
+                                } else if (st === 'pending approval' || st === 'pending') {
+                                    pending += d;
+                                } else if (st === 'rejected') {
+                                    rejected += d;
+                                }
                             });
                             const typeTotal = Object.values(byType).reduce((a, b) => a + b, 0);
-                            if (typeTotal === 0) return '';
+                            if (typeTotal === 0 && pending === 0 && rejected === 0) return '';
                             const visible = globalVisibleLeaveTypes || [];
                             const cardStyle = 'min-height:60px;padding:8px 10px;';
                             const labelStyle = 'font-size:10px !important;font-weight:700;text-transform:uppercase;letter-spacing:0.2px;margin-bottom:4px;';
@@ -11853,6 +11861,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                     let sw = 0, sn = 0;
                                     leaves.forEach(l => {
                                         if (l.type !== 'Sick Leave') return;
+                                        if (statusKey(l.status) !== 'approved') return;
                                         const d = l.duration || 1;
                                         if (l.mcStatus === 'With MC') sw += d;
                                         else sn += d;
