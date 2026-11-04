@@ -1879,6 +1879,8 @@
                             const _ll = localStorage.getItem('physioLoginSessionLogs');
                             if (_ll) { const p = JSON.parse(_ll); if (Array.isArray(p)) globalLoginLogsRepository = p; }
                         } catch (e) { }
+                        // Drop notifications and banners older than 24 hours on load.
+                        if (pruneExpiredNotifications()) persistCoreStores();
                     }
                     let staffProfileChangesetPipeline = [];
                     let systemAlertLogs = [];
@@ -1921,10 +1923,66 @@
                     let notifActiveTab = 'all';       // Current notification filter tab
                     let notifPanelOpen = false;       // Panel visibility state
 
+                    // Notifications and alert banners expire after 24 hours.
+                    const NOTIF_LIFESPAN_MS = 24 * 60 * 60 * 1000;
+
+                    function notifCreatedAt(entry) {
+                        if (!entry) return 0;
+                        if (typeof entry.createdAt === 'number' && entry.createdAt > 0) return entry.createdAt;
+                        if (typeof entry.timestamp === 'number') return entry.timestamp;
+                        if (typeof entry.timestampMs === 'number') return entry.timestampMs;
+                        // Legacy entries used Date.now() + Math.random() as their id.
+                        const numericId = Number(entry.id);
+                        if (Number.isFinite(numericId) && numericId > 1000000000000) return Math.floor(numericId);
+                        const parsed = Date.parse(entry.timestamp);
+                        return Number.isFinite(parsed) ? parsed : 0;
+                    }
+
+                    function notifLifespanMs(entry) {
+                        const label = String((entry && (entry.duration || entry.lifespan)) || '').toLowerCase();
+                        if (label.indexOf('indefinit') !== -1 || label.indexOf('persistent') !== -1) return Infinity;
+                        if (label.indexOf('24 hour') !== -1) return NOTIF_LIFESPAN_MS;
+                        if (label.indexOf('10 min') !== -1) return 10 * 60 * 1000;
+                        if (label.indexOf('hour') !== -1) return 60 * 60 * 1000;
+                        return NOTIF_LIFESPAN_MS;
+                    }
+
+                    function formatNotifDateTime(ts) {
+                        const value = typeof ts === 'number' ? ts : Date.parse(ts);
+                        const d = new Date(value);
+                        if (isNaN(d.getTime())) return String(ts || '');
+                        const pad = n => String(n).padStart(2, '0');
+                        return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear()
+                            + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+                    }
+
+                    function pruneExpiredNotifications() {
+                        const cutoff = Date.now();
+                        const keep = (entry) => {
+                            const created = notifCreatedAt(entry);
+                            if (!created) return true;
+                            const lifespan = notifLifespanMs(entry);
+                            return lifespan === Infinity || created + lifespan > cutoff;
+                        };
+                        if (!Array.isArray(notificationStore)) notificationStore = [];
+                        if (!Array.isArray(systemAlertLogs)) systemAlertLogs = [];
+                        const beforeNotifs = notificationStore.length;
+                        const beforeAlerts = systemAlertLogs.length;
+                        notificationStore = notificationStore.filter(keep);
+                        systemAlertLogs = systemAlertLogs.filter(keep);
+                        return beforeNotifs !== notificationStore.length || beforeAlerts !== systemAlertLogs.length;
+                    }
+
+                    function persistNotificationStores() {
+                        try { localStorage.setItem('physioNotificationStore', JSON.stringify(notificationStore)); } catch (e) { }
+                        try { localStorage.setItem('physioSystemAlertLogs', JSON.stringify(systemAlertLogs)); } catch (e) { }
+                    }
+
                     // Notification types: 'message' | 'broadcast' | 'system'
                     function pushNotification(opts) {
+                        const now = Date.now();
                         const notif = {
-                            id: Date.now() + Math.random(),
+                            id: now + Math.random(),
                             type: opts.type || 'system',
                             tier: opts.tier || 'info',
                             title: opts.title || 'Notification',
@@ -1934,9 +1992,13 @@
                             actionLabel: opts.actionLabel || null,
                             senderEmail: opts.senderEmail || null,
                             recipientEmail: opts.recipientEmail || null, // Added to route private messages
-                            timestamp: Date.now(),
+                            timestamp: now,
+                            createdAt: now,
+                            duration: opts.duration || opts.lifespan || '24 hours',
+                            expiresAt: now + (opts.lifespanHours ? opts.lifespanHours * 3600000 : NOTIF_LIFESPAN_MS),
                             read: false
                         };
+                        pruneExpiredNotifications();
                         notificationStore.unshift(notif);
 
                         systemAlertLogs.unshift({
@@ -1944,8 +2006,9 @@
                             tier: notif.tier,
                             text: notif.text,
                             channel: notif.type,
-                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            lifespan: '24 hours',
+                            timestamp: formatNotifDateTime(now),
+                            createdAt: now,
+                            lifespan: notif.duration,
                             action: notif.action
                         });
 
@@ -1955,6 +2018,7 @@
                     }
 
                     function updateBellBadge() {
+                        if (pruneExpiredNotifications()) persistNotificationStores();
                         const unread = notificationStore.filter(n =>
                             !n.read &&
                             (n.recipientEmail === null || n.recipientEmail === currentActiveSessionUser.email)
@@ -2015,6 +2079,7 @@
                         const container = document.getElementById('notificationCenterList');
                         if (!container) return;
                         container.innerHTML = '';
+                        if (pruneExpiredNotifications()) persistNotificationStores();
 
                         const filtered = (notifActiveTab === 'all'
                             ? notificationStore
@@ -2061,35 +2126,37 @@
                     }
 
                     function formatNotifTime(ts) {
-                        const now = Date.now();
-                        const diff = now - ts;
-                        if (diff < 60000) return 'Just now';
-                        if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
-                        if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
-                        return new Date(ts).toLocaleDateString();
+                        // Always show the full date and time, not just the clock time.
+                        return formatNotifDateTime(ts);
                     }
 
                     function markNotificationRead(id) {
                         const notif = notificationStore.find(n => n.id == id);
                         if (notif) notif.read = true;
+                        persistNotificationStores();
                         updateBellBadge();
                         if (notifPanelOpen) renderNotificationList();
                     }
 
                     function dismissNotification(id) {
                         notificationStore = notificationStore.filter(n => n.id != id);
+                        systemAlertLogs = systemAlertLogs.filter(l => l.id != id);
+                        persistNotificationStores();
                         updateBellBadge();
                         if (notifPanelOpen) renderNotificationList();
+                        renderOperationalAlertsFeed();
                     }
 
                     function markAllNotificationsRead() {
                         notificationStore.forEach(n => n.read = true);
+                        persistNotificationStores();
                         updateBellBadge();
                         if (notifPanelOpen) renderNotificationList();
                     }
 
                     function clearAllNotifications() {
                         notificationStore = [];
+                        persistNotificationStores();
                         updateBellBadge();
                         if (notifPanelOpen) renderNotificationList();
                     }
@@ -6136,19 +6203,31 @@
                             });
                         }
                     }
-                    function dismissAlertBanner(el) {
+                    function dismissAlertBanner(el, id) {
                         var b = el ? el.closest('.broadcast-alert-banner') : null;
                         if (b) b.remove();
+                        const targetId = id != null ? id : (systemAlertLogs[0] ? systemAlertLogs[0].id : null);
+                        if (targetId != null) {
+                            systemAlertLogs = systemAlertLogs.filter(l => l.id != targetId);
+                            notificationStore = notificationStore.filter(n => n.id != targetId);
+                        }
+                        persistNotificationStores();
+                        updateBellBadge();
+                        renderOperationalAlertsFeed();
+                        if (notifPanelOpen) renderNotificationList();
                     }
 
                     function renderOperationalAlertsFeed() {
                         const anchor = document.getElementById('globalAnnouncementTickerArea');
                         if (!anchor) return;
+                        if (pruneExpiredNotifications()) persistNotificationStores();
                         anchor.innerHTML = "";
                         if (systemAlertLogs.length > 0) {
                             const item = systemAlertLogs[0];
                             const tierLabel = (item.tier || item.channel || 'info').toUpperCase();
                             const lifespan = item.duration || item.lifespan || '';
+                            const logTime = notifCreatedAt(item);
+                            const stamp = logTime ? formatNotifDateTime(logTime) : (item.timestamp || '');
                             const outerDiv = document.createElement('div');
                             outerDiv.className = `broadcast-alert-banner ${item.tier || item.channel || 'info'}`;
                             outerDiv.innerHTML = `
@@ -6158,8 +6237,8 @@
                         ${lifespan ? `<span style="font-style:italic; font-size:9px; opacity:0.8;">(Active Lifespan: ${lifespan})</span>` : ''}
                     </div>
                     <div style="display:flex; align-items:center; gap:6px;">
-                        <span style="font-size:9px; font-weight:700;">${item.timestamp}</span>
-                        <span onclick="dismissAlertBanner(this)" style="cursor:pointer;font-size:14px;color:var(--text-muted);opacity:0.6;line-height:1;">×</span>
+                        <span style="font-size:9px; font-weight:700;">${stamp}</span>
+                        <span onclick="dismissAlertBanner(this, '${item.id}')" style="cursor:pointer;font-size:14px;color:var(--text-muted);opacity:0.6;line-height:1;">×</span>
                     </div>
                 `;
                             anchor.appendChild(outerDiv);
@@ -15180,19 +15259,22 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     }
 
                     function triggerAlertLogsSummary() {
+                        if (pruneExpiredNotifications()) persistNotificationStores();
                         let list = `<div style="display:flex; flex-direction:column; gap:6px;">`;
                         systemAlertLogs.forEach(log => {
                             // If the notification includes an action path, render an interactive transition button
                             const actionButton = log.action
                                 ? `<button class="action-btn" style="padding:4px 8px; font-size:9px; margin-top:6px; background:var(--primary); font-weight:700;" onclick="closeSystemModalBox(); ${log.action}">💬 Open Chat</button>`
                                 : '';
+                            const logCreated = notifCreatedAt(log);
+                            const logStamp = logCreated ? formatNotifDateTime(logCreated) : (log.timestamp || '');
 
                             list += `
             <div style="background:var(--bg-main); padding:8px; border:1px solid var(--border); border-radius:6px; box-shadow:var(--card-shadow);">
                 <span class="badge ${log.tier === 'urgent' ? 'badge-danger' : 'badge-primary'}">${log.tier.toUpperCase()}</span>
                 <div style="font-weight:600; margin-top:4px; color:var(--text-heading);">${log.text}</div>
                 ${actionButton}
-                <div style="font-size:8px; color:var(--text-muted); text-align:right; margin-top:4px;">${log.timestamp}</div>
+                <div style="font-size:8px; color:var(--text-muted); text-align:right; margin-top:4px;">${logStamp}</div>
             </div>
         `;
                         });
@@ -22814,6 +22896,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             action: `triggerSelectedModuleShift('comms_center')`,
                             actionLabel: 'View',
                             timestamp: Date.now(),
+                            createdAt: Date.now(),
+                            duration: duration,
                             read: false
                         });
                         updateBellBadge();
@@ -23003,6 +23087,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             action: `triggerSelectedModuleShift('comms_center')`,
                             actionLabel: 'View',
                             timestamp: Date.now(),
+                            createdAt: Date.now(),
+                            duration: t.duration,
                             read: false
                         });
                         updateBellBadge();
@@ -23146,6 +23232,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     action: `triggerSelectedModuleShift('comms_center')`,
                                     actionLabel: 'View',
                                     timestamp: Date.now(),
+                                    createdAt: Date.now(),
+                                    duration: t.duration,
                                     read: false
                                 });
                                 updateBellBadge();
