@@ -4995,46 +4995,115 @@
                         }
                         return systemTextDictionary[key] || key;
                     }
-                    window.executeAuthenticationChallenge = function () {
-                        const btn = document.getElementById('lbl_auth_btn_l');
-                        if (btn) {
-                            btn.disabled = true;
-                            btn.innerHTML = '<span class="spinner"></span> Authenticating...';
+                    function findLocalAccount(identifier) {
+                        const key = String(identifier || '').trim().toLowerCase();
+                        if (!key) return null;
+                        return globalRosterRepository.find(u =>
+                            String(u.email || '').toLowerCase() === key ||
+                            String(u.username || '').toLowerCase() === key
+                        ) || null;
+                    }
+
+                    function createFirstLocalAdmin(identifier, pass) {
+                        const email = identifier;
+                        const name = email.split('@')[0].replace(/[._-]/g, ' ');
+                        const newAdmin = {
+                            name: name, username: email.split('@')[0], email: email,
+                            position: "Admin", department: "Administration Hub", dob: "", idCard: "",
+                            avatar: name.charAt(0).toUpperCase(), idCardExpiry: "", healthLicence: "",
+                            healthLicenceExpiry: "", password: pass, phone: "", emergencyContact: "",
+                            style: "Full-Time", visaExpiry: "", passportExpiry: "", hireDate: "",
+                            accentColor: "#004b87", sickBalance: 30, annualBalance: 30, familyBalance: 15,
+                            photoUrl: "", extraFieldsData: {}, active: true,
+                            joiningDate: new Date().toISOString().slice(0, 10),
+                            contractExpiryDate: "", lastDayOfWorking: ""
+                        };
+                        globalRosterRepository.push(newAdmin);
+                        try { localStorage.setItem('physioStaffDirectoryRepository', JSON.stringify(globalRosterRepository)); } catch (e) { }
+                        initializeAuthenticatedSessionContext(newAdmin);
+                    }
+
+                    function resumePendingCloudLogin() {
+                        let pending = null;
+                        try { pending = JSON.parse(sessionStorage.getItem('physioPendingCloudLogin') || 'null'); } catch (e) { }
+                        if (!pending || !pending.identifier) return;
+                        try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
+                        const user = findLocalAccount(pending.identifier);
+                        if (user && user.password === pending.password && user.active !== false) {
+                            initializeAuthenticatedSessionContext(user);
                         }
+                    }
+
+                    window.executeAuthenticationChallenge = function () {
+                        const emailInput = document.getElementById('authFieldUserEmail');
+                        const passInput = document.getElementById('authFieldUserPassword');
+                        const identifier = emailInput ? emailInput.value.trim() : '';
+                        const pass = passInput ? passInput.value.trim() : '';
+                        const btn = document.getElementById('lbl_auth_btn_l');
+                        const setButton = function (busy, label) {
+                            if (!btn) return;
+                            btn.disabled = !!busy;
+                            btn.innerHTML = busy ? '<span class="spinner"></span> ' + label : lookupTranslationValue('Login');
+                        };
+                        const fail = function (message) {
+                            setButton(false);
+                            customAlert(message);
+                        };
+
+                        if (!identifier || !pass) {
+                            fail('Enter your email (or username) and your password.');
+                            return;
+                        }
+
+                        setButton(true, 'Authenticating...');
+
                         setTimeout(function () {
-                            const emailInput = document.getElementById('authFieldUserEmail');
-                            const passInput = document.getElementById('authFieldUserPassword');
-                            const email = emailInput ? emailInput.value.trim() : '';
-                            const pass = passInput ? passInput.value.trim() : '';
-
-                            // If no staff exist, auto-create admin from login form
-                            if (globalRosterRepository.length === 0 && email && pass) {
-                                const name = email.split('@')[0].replace(/[._-]/g, ' ');
-                                const newAdmin = {
-                                    name: name, username: email.split('@')[0], email: email,
-                                    position: "Admin", department: "Administration Hub", dob: "", idCard: "",
-                                    avatar: name.charAt(0).toUpperCase(), idCardExpiry: "", healthLicence: "",
-                                    healthLicenceExpiry: "", password: pass, phone: "", emergencyContact: "",
-                                    style: "Full-Time", visaExpiry: "", passportExpiry: "", hireDate: "",
-                                    accentColor: "#004b87", sickBalance: 30, annualBalance: 30, familyBalance: 15,
-                                    photoUrl: "", extraFieldsData: {}, active: true,
-                                    joiningDate: new Date().toISOString().slice(0, 10),
-                                    contractExpiryDate: "", lastDayOfWorking: ""
-                                };
-                                globalRosterRepository.push(newAdmin);
-                            }
-
-                            // Validate credentials against the roster
-                            const matchedUser = globalRosterRepository.find(u => u.email === email);
+                            const matchedUser = findLocalAccount(identifier);
                             if (matchedUser && matchedUser.password === pass) {
                                 initializeAuthenticatedSessionContext(matchedUser);
-                            } else if (matchedUser) {
-                                if (btn) { btn.disabled = false; btn.innerHTML = 'Login'; }
-                                customAlert("Invalid password. Please try again.");
-                            } else {
-                                if (btn) { btn.disabled = false; btn.innerHTML = 'Login'; }
-                                customAlert("No account found with that email.");
+                                return;
                             }
+
+                            const pc = (typeof window !== 'undefined') ? window.PhysioCloud : null;
+                            if (!pc || !pc.enabled) {
+                                if (matchedUser) { fail('Invalid password. Please try again.'); return; }
+                                if (globalRosterRepository.length === 0) { createFirstLocalAdmin(identifier, pass); return; }
+                                fail('No account found with that email on this device.');
+                                return;
+                            }
+
+                            // No local match: confirm the account against the cloud, download
+                            // this workspace, then finish signing in automatically.
+                            setButton(true, 'Checking cloud...');
+                            const cloudEmail = (matchedUser && matchedUser.email) ? matchedUser.email : identifier;
+                            pc.login(cloudEmail, pass).then(function (ok) {
+                                if (!ok) {
+                                    if (!matchedUser && globalRosterRepository.length === 0) {
+                                        createFirstLocalAdmin(identifier, pass);
+                                        return;
+                                    }
+                                    fail(matchedUser
+                                        ? 'Invalid password. Please try again.'
+                                        : 'No account found. On a new device, sign in with your full email address and the password you use on your other device.');
+                                    return;
+                                }
+                                setButton(true, 'Downloading workspace...');
+                                try {
+                                    sessionStorage.setItem('physioPendingCloudLogin', JSON.stringify({ identifier: identifier, password: pass }));
+                                } catch (e) { }
+                                window.__skipPersistOnUnload = true;
+                                pc.pullAll({ force: true }).then(function () {
+                                    location.reload();
+                                }).catch(function () {
+                                    location.reload();
+                                });
+                            }).catch(function () {
+                                if (!matchedUser && globalRosterRepository.length === 0) {
+                                    createFirstLocalAdmin(identifier, pass);
+                                    return;
+                                }
+                                fail('Could not reach the cloud. Check your internet connection and try again.');
+                            });
                         }, 50);
                     };
 
@@ -19245,6 +19314,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         loadSchedulerConfig();
                         startSchedulerTick();
                         window.addEventListener('beforeunload', function () {
+                            // After a cloud pull+reload, keep the downloaded data instead of
+                            // letting stale in-memory stores overwrite it.
+                            if (window.__skipPersistOnUnload) return;
                             persistCoreStores();
                         });
 
@@ -19280,6 +19352,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         loadRosterColorDefaults();
                         applySavedLoginTheme();
                         initLoginPortalConfig();
+                        resumePendingCloudLogin();
 
                         // Init biometric settings
                         const isBiometricEnabled = localStorage.getItem('physioBiometricEnabled') === 'true';

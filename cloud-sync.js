@@ -142,6 +142,8 @@
   function reloadOnce() {
     if (reloading) return;
     reloading = true;
+    // Do not let the app flush its stale in-memory stores over the data we just pulled.
+    try { window.__skipPersistOnUnload = true; } catch (e) { /* ignore */ }
     try { location.reload(); } catch (e) { /* ignore */ }
   }
 
@@ -233,8 +235,9 @@
 
   /* ---------------- pull ---------------- */
 
-  function pullAll() {
+  function pullAll(options) {
     if (!enabled || !token) return Promise.resolve(false);
+    var force = !!(options && options.force);
     return fetch(baseUrl + '/sync', { headers: authHeaders() })
       .then(function (res) {
         if (res.status === 401) { clearToken(); return null; }
@@ -250,7 +253,7 @@
           if (!isSyncKey(entry.key)) return;
           var serverTs = Number(entry.updated_at) || 0;
           var localTs = Number(meta[entry.key]) || 0;
-          if (serverTs > localTs) {
+          if (force || serverTs > localTs) {
             try { localStorage.setItem(entry.key, entry.value); } catch (e) { return; }
             meta[entry.key] = serverTs;
             pushed[entry.key] = hash(entry.value);
