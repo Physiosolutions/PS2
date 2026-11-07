@@ -465,6 +465,7 @@
                     // ===== PS CALENDAR SYSTEM =====
                     let psCalData = {};
                     let psCalSelType = 'holiday';
+                    let psCalLoaded = false;
 
                     let psCalCustomTypes = {}; // Store custom type definitions: { typeId: { label, bg, border, text } }
                     let psCalSyncedModules = { roster: true, masterOT: true, leave: false };
@@ -483,6 +484,8 @@
                     }
 
                     function initPSCal() {
+                        if (psCalLoaded) return;
+                        psCalLoaded = true;
                         // Load saved data from localStorage first
                         if (loadPSCalDataFromStorage()) {
                             try {
@@ -499,6 +502,9 @@
                     }
 
                     function renderPSCal() {
+                        // Calendar entries live in localStorage/cloud; make sure they are
+                        // loaded before the first paint so they survive reloads and logins.
+                        initPSCal();
                         const year = document.getElementById('psCalYear').value;
                         const grid = document.getElementById('psCalGrid');
                         if (!grid) return;
@@ -19311,6 +19317,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         persistTextDictionary();
                         persistReferenceRepository();
                         loadCoreStores();
+                        initPSCal();
                         loadSchedulerConfig();
                         startSchedulerTick();
                         window.addEventListener('beforeunload', function () {

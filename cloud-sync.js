@@ -254,6 +254,13 @@
           var serverTs = Number(entry.updated_at) || 0;
           var localTs = Number(meta[entry.key]) || 0;
           if (force || serverTs > localTs) {
+            // A forced pull must never replace real local content with an empty
+            // placeholder from the cloud (that is how lost data happens).
+            if (force) {
+              var localValue = null;
+              try { localValue = localStorage.getItem(entry.key); } catch (e) { /* ignore */ }
+              if (isEmptyish(entry.value) && localValue != null && !isEmptyish(localValue)) return;
+            }
             try { localStorage.setItem(entry.key, entry.value); } catch (e) { return; }
             meta[entry.key] = serverTs;
             pushed[entry.key] = hash(entry.value);
