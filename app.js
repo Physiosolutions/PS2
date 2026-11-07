@@ -5040,6 +5040,21 @@
                         }
                     }
 
+                    // Keep the signed-in user across the automatic cloud reload so one
+                    // login is enough even when the workspace is being refreshed.
+                    function resumeSavedSession() {
+                        if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) return;
+                        let email = '';
+                        try { email = sessionStorage.getItem('physioActiveSessionEmail') || ''; } catch (e) { }
+                        if (!email) return;
+                        const user = globalRosterRepository.find(u => String(u.email || '').toLowerCase() === email.toLowerCase());
+                        if (!user || user.active === false) {
+                            try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
+                            return;
+                        }
+                        initializeAuthenticatedSessionContext(user);
+                    }
+
                     window.executeAuthenticationChallenge = function () {
                         const emailInput = document.getElementById('authFieldUserEmail');
                         const passInput = document.getElementById('authFieldUserPassword');
@@ -5855,6 +5870,7 @@
                         }
                         currentActiveSessionUser = userObject;
                         portalSwitchOriginEmail = userObject.email;
+                        try { sessionStorage.setItem('physioActiveSessionEmail', userObject.email); } catch (e) { }
                         try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
                         syncPatientTrackerVisibility();
                         document.getElementById('authContainer').classList.add('hidden');
@@ -15412,6 +15428,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         customConfirm("Do you wish to exit the current operations session?", () => {
                             currentActiveSessionUser = null;
                             portalSwitchOriginEmail = "";
+                            try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
+                            try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
                             document.getElementById('appContainer').classList.add('hidden');
                             renderAuthViewLayoutBox();
                             onRosterCycleChange();
@@ -19360,6 +19378,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         applySavedLoginTheme();
                         initLoginPortalConfig();
                         resumePendingCloudLogin();
+                        resumeSavedSession();
 
                         // Init biometric settings
                         const isBiometricEnabled = localStorage.getItem('physioBiometricEnabled') === 'true';

@@ -142,6 +142,12 @@
   function reloadOnce() {
     if (reloading) return;
     reloading = true;
+    try {
+      // Never loop: two automatic reloads per tab is already one more than enough.
+      var reloadCount = Number(sessionStorage.getItem('physioCloudReloadCount') || '0');
+      if (reloadCount >= 2) { reloading = false; return; }
+      sessionStorage.setItem('physioCloudReloadCount', String(reloadCount + 1));
+    } catch (e) { /* ignore */ }
     // Do not let the app flush its stale in-memory stores over the data we just pulled.
     try { window.__skipPersistOnUnload = true; } catch (e) { /* ignore */ }
     try { location.reload(); } catch (e) { /* ignore */ }
@@ -270,6 +276,8 @@
         if (changed) {
           writeJson(KEY_META, meta);
           writeJson(KEY_PUSHED, pushed);
+        } else {
+          try { sessionStorage.removeItem('physioCloudReloadCount'); } catch (e) { /* ignore */ }
         }
         note('lastPull');
         return changed;
