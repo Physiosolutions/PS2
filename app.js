@@ -1742,6 +1742,13 @@
                     window.__globalRosterStoreGet = function () { return globalRosterRepository; };
                     window.__saveRosterStore = function () {
                         try { localStorage.setItem('physioStaffDirectoryRepository', JSON.stringify(globalRosterRepository)); } catch (e) { }
+                        // Extra staff accounts added by an admin should reach the cloud
+                        // automatically so new staff can log in from a fresh device.
+                        try {
+                            if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) {
+                                scheduleStaffCloudSync(currentActiveSessionUser);
+                            }
+                        } catch (e) { }
                     };
                     let globalLoginLogsRepository = [];
                     let globalLeaveRepository = [];
@@ -5573,10 +5580,10 @@
                         rosterState.pt.currentCycle = currentCycleVal;
                         rosterState.pt.myRosterViewCycle = currentCycleVal;
                         ptState.cycle = currentCycleVal;
-                        // Ensure sidebar visible by default on every page load
+                        // Ensure the sidebar is visible on desktop. Mobile keeps the saved
+                        // preference, which is applied after login by applySavedSidebarPreference().
                         const sidebar = document.getElementById('sidebarContainerElement');
-                        if (sidebar) sidebar.classList.remove('collapsed');
-                        localStorage.removeItem('sidebar_collapsed_preference');
+                        if (sidebar && !isMobileViewport()) sidebar.classList.remove('collapsed');
                     }
 
 
@@ -5872,11 +5879,13 @@
                         portalSwitchOriginEmail = userObject.email;
                         try { sessionStorage.setItem('physioActiveSessionEmail', userObject.email); } catch (e) { }
                         try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
+                        scheduleStaffCloudSync(userObject);
                         syncPatientTrackerVisibility();
                         document.getElementById('authContainer').classList.add('hidden');
                         document.getElementById('authContainerSplit').classList.add('hidden');
                         const container = document.getElementById('appContainer');
                         container.classList.remove('hidden');
+                        try { applySavedSidebarPreference(); } catch (e) { }
 
                         document.getElementById('userMatrixName').innerText = userObject.name;
                         document.getElementById('userMatrixRole').innerText = lookupTranslationValue(userObject.position);
@@ -15431,6 +15440,12 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
                             try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
                             document.getElementById('appContainer').classList.add('hidden');
+                            // Close the mobile drawer so it never covers the login screen.
+                            const sidebar = document.getElementById('sidebarContainerElement');
+                            const overlay = document.getElementById('sidebarOverlay');
+                            if (sidebar) { sidebar.classList.remove('expanded'); sidebar.classList.add('collapsed'); }
+                            if (overlay) overlay.classList.remove('active');
+                            document.body.classList.remove('mobile-sidebar-open');
                             renderAuthViewLayoutBox();
                             onRosterCycleChange();
                             loadRosterColorDefaults();
@@ -19178,6 +19193,11 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     mblLogo.style.display = 'none';
                                 }
                             }
+
+                            // Persist the mobile sidebar choice so it is restored on next load.
+                            try {
+                                localStorage.setItem('sidebar_collapsed_preference', isExpanded ? 'false' : 'true');
+                            } catch (e) { }
                             return;
                         }
 
@@ -19214,6 +19234,20 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         }, 300);
                     }
 
+                    // Restore the sidebar state the user last chose on this device.
+                    function applySavedSidebarPreference() {
+                        if (!isMobileViewport()) return;
+                        const app = document.getElementById('appContainer');
+                        if (!app || app.classList.contains('hidden')) return;
+                        const sidebar = document.getElementById('sidebarContainerElement');
+                        if (!sidebar) return;
+                        let saved = '';
+                        try { saved = localStorage.getItem('sidebar_collapsed_preference') || ''; } catch (e) { }
+                        // Default on a fresh device is collapsed (closed drawer).
+                        const shouldExpand = saved === 'false';
+                        toggleSidebarLayout(shouldExpand);
+                    }
+
                     // On window resize, reset sidebar for current viewport
                     window.addEventListener('resize', function () {
                         const sidebar = document.getElementById('sidebarContainerElement');
@@ -19227,11 +19261,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             const logo = document.getElementById('topNavLogo');
                             if (logo) logo.style.display = 'block';
                         } else {
-                            // On mobile, ensure collapsed class is present by default
-                            sidebar.classList.add('collapsed');
-                            sidebar.classList.remove('expanded');
-                            if (overlay) overlay.classList.remove('active');
-                            document.body.classList.remove('mobile-sidebar-open');
+                            // Restore the saved mobile preference instead of forcing a state.
+                            applySavedSidebarPreference();
                         }
                     });
 
@@ -19676,6 +19707,19 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 return '<div class="cloud-stat"><span class="cloud-stat-label">' + c[0] + '</span><strong>' + c[1] + '</strong></div>';
                             }).join('');
                         });
+                    }
+
+                    let staffCloudSyncTimer = null;
+                    function scheduleStaffCloudSync(userObject) {
+                        if (!userObject) return;
+                        if (String(userObject.position || '').toLowerCase() !== 'admin') return;
+                        const pc = (typeof window !== 'undefined') ? window.PhysioCloud : null;
+                        if (!pc || !pc.enabled || typeof pc.syncStaffAccounts !== 'function') return;
+                        if (staffCloudSyncTimer) return;
+                        staffCloudSyncTimer = setTimeout(function () {
+                            staffCloudSyncTimer = null;
+                            pc.syncStaffAccounts().catch(function () { });
+                        }, 2000);
                     }
 
                     function cloudSyncNow() {

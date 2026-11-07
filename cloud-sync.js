@@ -524,6 +524,48 @@
     return Promise.resolve(input);
   }
 
+  /**
+   * Push the locally stored staff roster to the cloud account table so every
+   * staff member can sign in from a device that has never synced before.
+   * Requires a signed-in admin token.
+   */
+  function syncStaffAccounts(force) {
+    if (!enabled || !token) return Promise.resolve({ ok: false, error: 'Not signed in to the cloud' });
+    var roster = readJson('physioStaffDirectoryRepository', []);
+    var users = (Array.isArray(roster) ? roster : []).filter(function (u) {
+      return u && u.email && u.password;
+    }).map(function (u) {
+      return {
+        email: u.email,
+        password: u.password,
+        role: u.position || 'Physiotherapist',
+        active: u.active !== false,
+        data: { name: u.name, phone: u.phone || '', department: u.department || '' }
+      };
+    });
+    if (!users.length) return Promise.resolve({ ok: false, error: 'No staff accounts with email + password found' });
+    var payload = JSON.stringify(users);
+    var signature = hash(payload);
+    var last = '';
+    try { last = localStorage.getItem('physioCloudStaffSyncHash') || ''; } catch (e) { /* ignore */ }
+    if (!force && last === signature) return Promise.resolve({ ok: true, skipped: true });
+    return fetch(baseUrl + '/auth/users', {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ users: users })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok || !data || data.ok !== true) {
+          return { ok: false, error: (data && data.error) || ('HTTP ' + res.status) };
+        }
+        try { localStorage.setItem('physioCloudStaffSyncHash', signature); } catch (e) { /* ignore */ }
+        return data;
+      });
+    }).catch(function (err) {
+      return { ok: false, error: 'Network error: ' + String((err && err.message) || err) };
+    });
+  }
+
   // ---- first-load pull (runs before the app is used) ----
   if (enabled && token) {
     var alreadyPulled = false;
@@ -551,6 +593,7 @@
     firstContactMerge: firstContactMerge,
     uploadPhoto: uploadPhoto,
     seedFromRoster: seedFromRoster,
+    syncStaffAccounts: syncStaffAccounts,
     stats: stats,
     status: status,
     isSyncKey: isSyncKey

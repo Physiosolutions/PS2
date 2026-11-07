@@ -104,6 +104,36 @@ async function route(request, env) {
     return json({ ok: true, saved });
   }
 
+  // Let a signed-in admin push the staff roster to the cloud so every staff
+  // member can authenticate from a new device. No bootstrap secret needed.
+  if (path === '/auth/users' && method === 'POST') {
+    const callerEmail = await currentUser(request, env);
+    if (!callerEmail) return json({ ok: false, error: 'Unauthorized' }, 401);
+    const caller = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(callerEmail).first();
+    if (!caller || String(caller.role) !== 'Admin') return json({ ok: false, error: 'Forbidden' }, 403);
+    const body = await readJson(request);
+    const users = Array.isArray(body.users) ? body.users : [];
+    let saved = 0;
+    for (const u of users) {
+      const email = normEmail(u.email);
+      if (!email || !u.password) continue;
+      const now = Date.now();
+      const hash = await hashPassword(String(u.password));
+      await env.DB.prepare(
+        `INSERT INTO users (email,password_hash,role,active,data,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(email) DO UPDATE SET
+           password_hash=excluded.password_hash,
+           role=excluded.role,
+           active=excluded.active,
+           data=excluded.data,
+           updated_at=excluded.updated_at`
+      ).bind(email, hash, String(u.role || 'Physiotherapist'), u.active === false ? 0 : 1, JSON.stringify(u.data || {}), now, now).run();
+      saved++;
+    }
+    return json({ ok: true, saved });
+  }
+
   if (path === '/auth/login' && method === 'POST') {
     const body = await readJson(request);
     const email = normEmail(body.email);
