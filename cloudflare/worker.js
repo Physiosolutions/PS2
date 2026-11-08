@@ -204,13 +204,23 @@ async function route(request, env) {
     const skipped = [];
     for (const e of entries) {
       const key = String(e.key || '');
-      const value = String(e.value == null ? '' : e.value);
+      let value = String(e.value == null ? '' : e.value);
       if (!key || key.length > 200 || !isSyncKey(key)) {
         skipped.push({ key, reason: 'invalid-key' });
         continue;
       }
+      let updatedAt = parseInt(e.updatedAt, 10) || Date.now();
+      // The staff roster is shared by many devices. A device with an older copy
+      // must never delete staff that another device added, so merge instead of
+      // replacing. Deactivations still win because incoming records override.
+      if (key === 'physioStaffDirectoryRepository') {
+        const merged = await mergeRosterValue(env, value);
+        if (merged !== value) {
+          value = merged;
+          updatedAt = Math.max(updatedAt, Date.now());
+        }
+      }
       const bytes = byteLength(value);
-      const updatedAt = parseInt(e.updatedAt, 10) || Date.now();
       if (bytes > MAX_VALUE_BYTES) {
         if (bytes > MAX_CHUNKED_BYTES) {
           skipped.push({ key, reason: 'too-large', bytes });
@@ -387,6 +397,43 @@ async function expandEntries(env, rows) {
     out.push({ key: row.key, value, updated_at: row.updated_at });
   }
   return out;
+}
+
+function rosterIdentity(user) {
+  if (!user || typeof user !== 'object') return '';
+  return String(user.email || user.username || user.name || '').trim().toLowerCase();
+}
+
+/** Union the incoming staff roster with the one already stored in the cloud. */
+async function mergeRosterValue(env, incomingValue) {
+  try {
+    const row = await env.DB
+      .prepare('SELECT key, value, updated_at FROM kv_store WHERE key = ?')
+      .bind('physioStaffDirectoryRepository')
+      .first();
+    if (!row) return incomingValue;
+    const expanded = await expandEntries(env, [row]);
+    const incoming = JSON.parse(incomingValue);
+    const existing = JSON.parse((expanded[0] && expanded[0].value) || '[]');
+    if (!Array.isArray(incoming) || !Array.isArray(existing)) return incomingValue;
+    const seen = new Set();
+    incoming.forEach((u) => {
+      const id = rosterIdentity(u);
+      if (id) seen.add(id);
+    });
+    const merged = incoming.slice();
+    let added = 0;
+    existing.forEach((u) => {
+      const id = rosterIdentity(u);
+      if (id && !seen.has(id)) {
+        merged.push(u);
+        added++;
+      }
+    });
+    return added ? JSON.stringify(merged) : incomingValue;
+  } catch (e) {
+    return incomingValue;
+  }
 }
 
 function json(data, status = 200) {
