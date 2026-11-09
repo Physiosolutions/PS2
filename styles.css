@@ -597,22 +597,26 @@ padding: 10px 16px !important;
             overflow: hidden;
         }
 
-        /* Collapsed Sidebar Class (for mobile) */
-        .sidebar.collapsed {
-            width: 0px;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-            border-right: none;
-            box-shadow: none;
+        /* Collapsed Sidebar: only the mobile drawer uses this state. On desktop
+           the sidebar must always stay visible (a stale class used to make it
+           disappear completely). */
+        @media (max-width: 768px), (pointer: coarse) {
+            .sidebar.collapsed {
+                width: 0px;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                border-right: none;
+                box-shadow: none;
+            }
+
+            .sidebar.collapsed * {
+                opacity: 0;
+                pointer-events: none;
+            }
         }
 
         .sidebar * {
             transition: opacity 0.2s ease;
-        }
-
-        .sidebar.collapsed * {
-            opacity: 0;
-            pointer-events: none;
         }
 
         .sidebar-overlay {
@@ -3412,7 +3416,7 @@ padding: 10px 16px !important;
                         }
 
                         /* ===== DESKTOP HOVER-EXPAND SIDEBAR ===== */
-                        @media (min-width: 769px) and (hover: hover) {
+                        @media (min-width: 769px) and (hover: hover) and (pointer: fine) {
                             .sidebar {
                                 width: 60px !important;
                             }

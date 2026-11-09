@@ -15443,7 +15443,11 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             // Close the mobile drawer so it never covers the login screen.
                             const sidebar = document.getElementById('sidebarContainerElement');
                             const overlay = document.getElementById('sidebarOverlay');
-                            if (sidebar) { sidebar.classList.remove('expanded'); sidebar.classList.add('collapsed'); }
+                            if (sidebar) {
+                                sidebar.classList.remove('expanded');
+                                if (isMobileViewport()) sidebar.classList.add('collapsed');
+                                else sidebar.classList.remove('collapsed');
+                            }
                             if (overlay) overlay.classList.remove('active');
                             document.body.classList.remove('mobile-sidebar-open');
                             renderAuthViewLayoutBox();
@@ -19201,37 +19205,12 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             return;
                         }
 
-    // Desktop with hover-expand: toggle button is hidden, skip collapse behavior
-    if (!isMobileViewport()) return;
-    let isCollapsed;
-    if (typeof forceState === 'boolean') {
-        isCollapsed = !forceState;
-    } else {
-        isCollapsed = sidebar.classList.toggle('collapsed');
-    }
-
-    const topNavLogo = document.getElementById('topNavLogo');
-    if (topNavLogo) {
-        if (isCollapsed) {
-            const sidebarImg = document.querySelector('#sidebarBrandLabelText img');
-            if (sidebarImg && !topNavLogo.querySelector('img')) {
-                topNavLogo.appendChild(sidebarImg.cloneNode(true));
-            }
-            topNavLogo.style.display = 'block';
-        } else {
-            topNavLogo.style.display = 'none';
-        }
-    }
-
-    // Save user preference to browser memory
-    localStorage.setItem('sidebar_collapsed_preference', isCollapsed ? 'true' : 'false');
-
-                        // Smoothly recalculate visual layouts after transitions finish
-                        setTimeout(() => {
-                            if (globalActiveViewportModule === 'therapist_volume') {
-                                renderVolumeAnalytics();
-                            }
-                        }, 300);
+                        // Desktop uses the permanent hover-expand rail, so there is
+                        // nothing to collapse. Make sure it can never stay hidden.
+                        sidebar.classList.remove('collapsed');
+                        sidebar.classList.remove('expanded');
+                        if (overlay) overlay.classList.remove('active');
+                        document.body.classList.remove('mobile-sidebar-open');
                     }
 
                     // Restore the sidebar state the user last chose on this device.
@@ -19248,23 +19227,44 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         toggleSidebarLayout(shouldExpand);
                     }
 
-                    // On window resize, reset sidebar for current viewport
-                    window.addEventListener('resize', function () {
+                    // Keep the sidebar correct when the window is resized, minimised
+                    // and restored, rotated, or brought back from the back/forward cache.
+                    function syncSidebarForViewport() {
                         const sidebar = document.getElementById('sidebarContainerElement');
-                        const overlay = document.getElementById('sidebarOverlay');
                         if (!sidebar) return;
-                        if (!isMobileViewport()) {
-                            sidebar.classList.remove('expanded');
-                            sidebar.classList.remove('collapsed');
-                            if (overlay) overlay.classList.remove('active');
-                            document.body.classList.remove('mobile-sidebar-open');
-                            const logo = document.getElementById('topNavLogo');
-                            if (logo) logo.style.display = 'block';
-                        } else {
-                            // Restore the saved mobile preference instead of forcing a state.
+                        const overlay = document.getElementById('sidebarOverlay');
+                        if (isMobileViewport()) {
                             applySavedSidebarPreference();
+                            return;
                         }
+                        sidebar.classList.remove('collapsed');
+                        sidebar.classList.remove('expanded');
+                        if (overlay) overlay.classList.remove('active');
+                        document.body.classList.remove('mobile-sidebar-open');
+                        const logo = document.getElementById('topNavLogo');
+                        if (logo) logo.style.display = 'block';
+                    }
+
+                    window.addEventListener('resize', syncSidebarForViewport);
+                    window.addEventListener('orientationchange', function () {
+                        setTimeout(syncSidebarForViewport, 250);
                     });
+                    window.addEventListener('pageshow', function (e) {
+                        // pageshow fires with persisted=true when restoring from bfcache.
+                        syncSidebarForViewport();
+                    });
+                    document.addEventListener('visibilitychange', function () {
+                        if (!document.hidden) syncSidebarForViewport();
+                    });
+                    try {
+                        const _sidebarMq = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+                        if (_sidebarMq && _sidebarMq.addEventListener) {
+                            _sidebarMq.addEventListener('change', syncSidebarForViewport);
+                        } else if (_sidebarMq && _sidebarMq.addListener) {
+                            _sidebarMq.addListener(syncSidebarForViewport);
+                        }
+                    } catch (e) { }
+
 
                     // Mobile touch interactions & edge swipe gestures
                     (function initMobileSidebarTouch() {
@@ -19367,6 +19367,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         persistReferenceRepository();
                         loadCoreStores();
                         initPSCal();
+                        syncSidebarForViewport();
                         loadSchedulerConfig();
                         startSchedulerTick();
                         window.addEventListener('beforeunload', function () {
