@@ -14146,11 +14146,13 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const leaveEndDate = item.toDate || item.date;
                             // A request that is still pending has not been approved or
                             // taken yet, so its owner can correct it even when the date
-                            // is in the past. Approved leave keeps the past-day lock.
+                            // is in the past. Approved leave keeps the past-day lock, but
+                            // the MC status marker on Sick Leave can always be corrected
+                            // (it only changes which MC bucket the day counts against).
                             const canManageThisLeave = (item.email === currentActiveSessionUser.email || isLeaveApprover)
                                 && item.status !== 'Rejected'
                                 && item.status !== 'Cancelled'
-                                && (isPending || leaveEndDate >= leaveTodayIso());
+                                && (isPending || leaveEndDate >= leaveTodayIso() || item.type === 'Sick Leave');
                             const actionButtons = [
                                 (isPending && isAllowedToApprove)
                                     ? `<button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
@@ -15078,7 +15080,35 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const b = splitLeaveBounds(item);
                         const isPendingRequest = item.status === 'Pending Approval';
                         if (!isPendingRequest && b.to < b.today) {
-                            customAlert("This leave is fully in the past. Days already taken cannot be changed.");
+                            // Approved days in the past cannot be re-dated, but the MC
+                            // status marker can still be corrected on Sick Leave.
+                            if (item.type !== 'Sick Leave') {
+                                customAlert("This leave is fully in the past. Days already taken cannot be changed.");
+                                return;
+                            }
+                            const mountMc = document.getElementById('systemGlobalModalMount');
+                            mountMc.innerHTML = `
+        <div class="system-inline-modal-overlay">
+            <div class="system-inline-modal-box" style="width:420px;">
+                <h3 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">🩺 Correct MC Status: ${item.employee}</h3>
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+                    ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
+                    Status: <strong>${item.status}</strong> · Current MC: <strong>${item.mcStatus || 'Not set'}</strong><br>
+                    This leave is already approved and in the past, so only the MC status can be corrected. The dates and the sick-leave balance stay unchanged.
+                </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>MC Status</label>
+                    <select id="leaveModMcOnly">
+                        <option value="With MC" ${item.mcStatus === 'With MC' ? 'selected' : ''}>With MC</option>
+                        <option value="Without MC" ${item.mcStatus === 'Without MC' ? 'selected' : ''}>Without MC</option>
+                    </select>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px;">
+                    <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Close</button>
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeaveMcCorrection(${id})">Save MC Correction</button>
+                </div>
+            </div>
+        </div>`;
                             return;
                         }
 
@@ -15176,6 +15206,23 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             }
                         }
 
+                        // Approved Sick Leave where only the MC status changed: correct
+                        // the marker in place and keep the approval. The sick-leave
+                        // balance was deducted once and must not move again.
+                        if (item.status === 'Approved' && item.type === 'Sick Leave' && mcChanged
+                            && newFrom === b.from && newTo === b.to) {
+                            const stampMc = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+                            const oldMc = item.mcStatus || 'not set';
+                            item.mcStatus = newMcStatus;
+                            item.note = (item.note || '') + ` [MC corrected ${oldMc} → ${newMcStatus} ${stampMc}]`;
+                            closeSystemModalBox();
+                            customAlert(`MC status corrected to ${newMcStatus}. The approval and the sick-leave balance stay unchanged.`);
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderLeaveManagementPortlet();
+                            return;
+                        }
+
                         const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
                         const oldRange = formatDateToDDMMYYYY(b.from) + ' → ' + formatDateToDDMMYYYY(b.to);
                         const oldMcStatus = item.mcStatus || '';
@@ -15267,6 +15314,51 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         closeSystemModalBox();
                         customAlert(`Leave rescheduled to ${formatDateToDDMMYYYY(newFrom)} → ${formatDateToDDMMYYYY(newTo)} (${duration}d). It now waits for approval.`);
+                        persistCoreStores();
+                        synchronizeWorkspaceCoreStatus();
+                        renderLeaveManagementPortlet();
+                    }
+
+                    // Fix a wrong MC status on an already approved Sick Leave record.
+                    // Dates and balances are untouched; the change is audit-noted.
+                    function commitLeaveMcCorrection(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item) return;
+                        if (!canModifyLeaveRecord(item)) {
+                            customAlert("You can only change leave on your own record.");
+                            return;
+                        }
+                        if (item.type !== 'Sick Leave') {
+                            customAlert("MC status only applies to Sick Leave records.");
+                            return;
+                        }
+                        const sel = document.getElementById('leaveModMcOnly');
+                        const newMcStatus = sel ? sel.value : '';
+                        if (!newMcStatus) {
+                            customAlert("Please pick the correct MC status.");
+                            return;
+                        }
+                        if (newMcStatus === (item.mcStatus || '')) {
+                            customAlert("The MC status is already set to " + newMcStatus + ".");
+                            return;
+                        }
+
+                        const duration = Number(item.duration) || 1;
+                        const usedInNewBucket = getStaffUsedLeaveDays(item.email, 'Sick Leave', newMcStatus)
+                            - (item.status === 'Approved' && item.mcStatus === newMcStatus ? duration : 0);
+                        const limit = getCeilingLimit('Sick Leave', newMcStatus);
+                        if (usedInNewBucket + duration > limit) {
+                            customAlert(`${newMcStatus} ceiling exceeded: ${usedInNewBucket}d already used of ${limit}d, and this correction is ${duration}d.`);
+                            return;
+                        }
+
+                        const oldMcStatus = item.mcStatus || 'not set';
+                        const stamp = formatDateToDDMMYYYY(formatIsoDateLocal(new Date())) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+                        item.mcStatus = newMcStatus;
+                        item.note = (item.note || '') + ` [MC corrected ${oldMcStatus} → ${newMcStatus} ${stamp}]`;
+
+                        closeSystemModalBox();
+                        customAlert(`MC status corrected to ${newMcStatus}. Dates, approval and the sick-leave balance are unchanged.`);
                         persistCoreStores();
                         synchronizeWorkspaceCoreStatus();
                         renderLeaveManagementPortlet();
