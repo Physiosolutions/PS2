@@ -2105,7 +2105,10 @@
                             timestamp: formatNotifDateTime(now),
                             createdAt: now,
                             lifespan: notif.duration,
-                            action: notif.action
+                            action: notif.action,
+                            // Private notifications must carry their audience so the
+                            // shared announcement ticker cannot show them to everyone.
+                            recipientEmail: notif.recipientEmail || null
                         });
 
                         updateBellBadge();
@@ -6400,13 +6403,28 @@
                         if (notifPanelOpen) renderNotificationList();
                     }
 
+                    // Decide whether a log entry may appear on the shared announcement
+                    // ticker. Private notifications (leave decisions, direct messages)
+                    // belong only to their recipient; older entries have no recipient
+                    // field, so their leave-decision wording is treated as private too.
+                    function isAlertVisibleToCurrentUser(log) {
+                        if (!log) return false;
+                        if (log.recipientEmail) {
+                            return !!currentActiveSessionUser && log.recipientEmail === currentActiveSessionUser.email;
+                        }
+                        const text = String(log.text || '');
+                        if (/^Your .+ request for .+ has been (approved|rejected)/i.test(text)) return false;
+                        if (/^(💬|New direct message|Message from )/i.test(text)) return false;
+                        return true;
+                    }
+
                     function renderOperationalAlertsFeed() {
                         const anchor = document.getElementById('globalAnnouncementTickerArea');
                         if (!anchor) return;
                         if (pruneExpiredNotifications()) persistNotificationStores();
                         anchor.innerHTML = "";
-                        if (systemAlertLogs.length > 0) {
-                            const item = systemAlertLogs[0];
+                        const item = systemAlertLogs.find(isAlertVisibleToCurrentUser);
+                        if (item) {
                             const tierLabel = (item.tier || item.channel || 'info').toUpperCase();
                             const lifespan = item.duration || item.lifespan || '';
                             const logTime = notifCreatedAt(item);
@@ -11903,6 +11921,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 text: replyText,
                                 icon: '💬',
                                 senderEmail: peerEmail,
+                                recipientEmail: currentActiveSessionUser.email,
                                 action: `switchCommsTab('direct'); selectChatPeer('${peerEmail}')`, // Corrected function
                                 actionLabel: 'Reply'
                             });
@@ -11935,7 +11954,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             icon: '💬',
                             action: `triggerCommsChatDirectNavigation('${senderEmail}')`,
                             actionLabel: 'Open Chat',
-                            senderEmail: senderEmail
+                            senderEmail: senderEmail,
+                            recipientEmail: currentActiveSessionUser.email
                         });
                     }
 
@@ -14966,9 +14986,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (item) {
+                            const wasAlreadyApproved = item.status === 'Approved';
                             item.status = resolution;
                             item.approvedBy = resolution === "Approved" ? (currentActiveSessionUser?.name || 'Unknown') : (currentActiveSessionUser?.name || 'Unknown');
-                            if (resolution === "Approved") {
+                            if (resolution === "Approved" && !wasAlreadyApproved) {
                                 const user = globalRosterRepository.find(u => u.email === item.email);
                                 // Pre-annual days belong to the next leave year, so they
                                 // must not touch the current annual balance.
@@ -14984,20 +15005,28 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 const preAnnualSuffix = item.preAnnual
                                     ? ` It counts against your next leave year (${item.preAnnualCycleStart ? formatDateToDDMMYYYY(item.preAnnualCycleStart) : 'next year'}), not this year.`
                                     : '';
+                                const rangeLabel = fromDate === toDate
+                                    ? formatDateToDDMMYYYY(fromDate)
+                                    : formatDateToDDMMYYYY(fromDate) + ' → ' + formatDateToDDMMYYYY(toDate);
                                 pushNotification({
                                     type: 'system',
                                     tier: 'success',
                                     title: 'Leave Approved',
-                                    text: `Your ${item.type} request for ${item.duration} day(s) has been approved by ${item.approvedBy}.${preAnnualSuffix}`,
+                                    text: `Your ${item.type} request for ${item.duration} day(s) (${rangeLabel}) has been approved by ${item.approvedBy}.${preAnnualSuffix}`,
                                     icon: '✅',
                                     recipientEmail: item.email
                                 });
-                            } else if (resolution === "Rejected") {
+                            } else if (resolution === "Rejected" && !wasAlreadyApproved) {
+                                const rejFrom = item.fromDate || item.date;
+                                const rejTo = item.toDate || item.date;
+                                const rejRange = rejFrom === rejTo
+                                    ? formatDateToDDMMYYYY(rejFrom)
+                                    : formatDateToDDMMYYYY(rejFrom) + ' → ' + formatDateToDDMMYYYY(rejTo);
                                 pushNotification({
                                     type: 'system',
                                     tier: 'urgent',
                                     title: 'Leave Rejected',
-                                    text: `Your ${item.type} request for ${item.duration} day(s) has been rejected.`,
+                                    text: `Your ${item.type} request for ${item.duration} day(s) (${rejRange}) has been rejected.`,
                                     icon: '❌',
                                     recipientEmail: item.email
                                 });
