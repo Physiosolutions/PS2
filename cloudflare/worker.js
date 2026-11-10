@@ -417,11 +417,32 @@ async function mergeRosterValue(env, incomingValue) {
     const existing = JSON.parse((expanded[0] && expanded[0].value) || '[]');
     if (!Array.isArray(incoming) || !Array.isArray(existing)) return incomingValue;
     const seen = new Set();
+    const existingById = new Map();
     incoming.forEach((u) => {
       const id = rosterIdentity(u);
       if (id) seen.add(id);
     });
-    const merged = incoming.slice();
+    existing.forEach((u) => {
+      const id = rosterIdentity(u);
+      if (id) existingById.set(id, u);
+    });
+
+    // Field-level protection for permissions that older devices do not know
+    // about. If an incoming record has no preAnnualAllowed key at all, keep the
+    // cloud value instead of silently wiping a management-granted permission.
+    // An explicit true/false from a current device still wins.
+    const merged = incoming.map((u) => {
+      const id = rosterIdentity(u);
+      const old = id ? existingById.get(id) : null;
+      if (!old || !Object.prototype.hasOwnProperty.call(old, 'preAnnualAllowed')) return u;
+      if (Object.prototype.hasOwnProperty.call(u, 'preAnnualAllowed')) return u;
+      const out = Object.assign({}, u);
+      out.preAnnualAllowed = old.preAnnualAllowed;
+      if (Object.prototype.hasOwnProperty.call(old, 'preAnnualAllowedBy')) out.preAnnualAllowedBy = old.preAnnualAllowedBy;
+      if (Object.prototype.hasOwnProperty.call(old, 'preAnnualAllowedAt')) out.preAnnualAllowedAt = old.preAnnualAllowedAt;
+      return out;
+    });
+
     let added = 0;
     existing.forEach((u) => {
       const id = rosterIdentity(u);
@@ -430,7 +451,7 @@ async function mergeRosterValue(env, incomingValue) {
         added++;
       }
     });
-    return added ? JSON.stringify(merged) : incomingValue;
+    return (added || merged.some((u, i) => u !== incoming[i])) ? JSON.stringify(merged) : incomingValue;
   } catch (e) {
     return incomingValue;
   }

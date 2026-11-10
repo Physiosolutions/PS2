@@ -8670,9 +8670,64 @@
                         return { start: cycleStart, end: cycleEnd };
                     }
 
-                    function getStaffUsedLeaveDays(email, type, mcStatus) {
-                        const cycle = getStaffAnniversaryCycleRange(email);
-                        if (!cycle) return 0;
+                    // ---- Leave-year (anniversary cycle) helpers -----------------
+                    // All comparisons use plain local YYYY-MM-DD strings so a leave
+                    // on the first/last day of a cycle is never shifted by timezone.
+                    function parseIsoDateLocal(isoDate) {
+                        const p = String(isoDate || '').slice(0, 10).split('-');
+                        if (p.length !== 3) return null;
+                        const d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+                        return isNaN(d.getTime()) ? null : d;
+                    }
+
+                    function formatIsoDateLocal(dateObj) {
+                        if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) return '';
+                        return dateObj.getFullYear() + '-' +
+                            String(dateObj.getMonth() + 1).padStart(2, '0') + '-' +
+                            String(dateObj.getDate()).padStart(2, '0');
+                    }
+
+                    function isIsoDateInRange(isoDate, range) {
+                        if (!range) return false;
+                        const value = String(isoDate || '').slice(0, 10);
+                        if (!value) return false;
+                        return value >= formatIsoDateLocal(range.start) && value <= formatIsoDateLocal(range.end);
+                    }
+
+                    function shiftLeaveCycleRange(range, years) {
+                        if (!range) return null;
+                        const start = new Date(range.start.getFullYear() + years, range.start.getMonth(), range.start.getDate());
+                        const end = new Date(range.end.getFullYear() + years, range.end.getMonth(), range.end.getDate());
+                        return { start: start, end: end };
+                    }
+
+                    function getStaffNextLeaveCycleRange(email) {
+                        const current = getStaffAnniversaryCycleRange(email);
+                        return current ? shiftLeaveCycleRange(current, 1) : null;
+                    }
+
+                    function getLeaveCycleRangeFromStartIso(startIso) {
+                        const start = parseIsoDateLocal(startIso);
+                        if (!start) return null;
+                        const end = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+                        end.setDate(end.getDate() - 1);
+                        return { start: start, end: end };
+                    }
+
+                    function formatLeaveCycleLabel(range) {
+                        if (!range) return '';
+                        return formatDateToDDMMYYYY(formatIsoDateLocal(range.start)) + ' → ' +
+                            formatDateToDDMMYYYY(formatIsoDateLocal(range.end));
+                    }
+
+                    // Pre-annual leave is granted per staff member by management.
+                    function isStaffPreAnnualEligible(email) {
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        return !!(staff && staff.preAnnualAllowed === true);
+                    }
+
+                    function getStaffUsedLeaveDaysInCycle(email, type, mcStatus, range) {
+                        if (!range) return 0;
                         let leaves = globalLeaveRepository.filter(l =>
                             l.email === email && l.type === type && l.status === 'Approved'
                         );
@@ -8680,11 +8735,15 @@
                             leaves = leaves.filter(l => l.mcStatus === mcStatus);
                         }
                         return leaves.reduce((sum, l) => {
-                            const d = l.duration || 1;
-                            const lDate = new Date(l.date);
-                            if (lDate >= cycle.start && lDate <= cycle.end) return sum + d;
-                            return sum;
+                            const iso = l.date || l.fromDate;
+                            return isIsoDateInRange(iso, range) ? sum + (Number(l.duration) || 1) : sum;
                         }, 0);
+                    }
+
+                    function getStaffUsedLeaveDays(email, type, mcStatus) {
+                        const cycle = getStaffAnniversaryCycleRange(email);
+                        if (!cycle) return 0;
+                        return getStaffUsedLeaveDaysInCycle(email, type, mcStatus, cycle);
                     }
 
                     function isLeaveExhausted(email, type, mcStatus) {
@@ -8734,17 +8793,27 @@
                         }
                         const userEmail = currentActiveSessionUser?.email;
                         sel.innerHTML = formTypes.map(t => {
-                            let exhausted = false, label = t;
+                            let exhausted = false, disabled = false, label = t;
                             if (t === 'Sick Leave') {
                                 const mcEx = userEmail ? isLeaveExhausted(userEmail, 'Sick Leave', 'With MC') : false;
                                 const noMcEx = userEmail ? isLeaveExhausted(userEmail, 'Sick Leave', 'Without MC') : false;
                                 exhausted = mcEx && noMcEx;
+                                disabled = exhausted;
                                 if (exhausted) label += ' (exhausted)';
                             } else {
                                 exhausted = userEmail ? isLeaveExhausted(userEmail, t, null) : false;
-                                if (exhausted) label += ' (exhausted)';
+                                if (exhausted) {
+                                    // A staff member approved for pre-annual leave can still
+                                    // request next leave year's annual leave from here.
+                                    if (t === 'Annual Leave' && isStaffPreAnnualEligible(userEmail)) {
+                                        label += ' (pre-annual available)';
+                                    } else {
+                                        label += ' (exhausted)';
+                                        disabled = true;
+                                    }
+                                }
                             }
-                            return `<option value="${t}" ${exhausted ? 'disabled style="color:var(--text-muted);"' : ''}>${label}</option>`;
+                            return `<option value="${t}" ${disabled ? 'disabled style="color:var(--text-muted);"' : ''}>${label}</option>`;
                         }).join('');
                     }
 
@@ -9392,6 +9461,19 @@
                         <input type="date" id="mUpQuotaExpiry" value="${staff.quotaExpiry || ''}">
                     </div>
 
+                    <!-- Pre-annual leave permission (management-granted) -->
+                    <div class="form-group" style="grid-column: span 2; border-top:1px solid var(--border); padding-top:10px;">
+                        <label>Pre-annual leave (next leave year)</label>
+                        <div class="toggle-row" style="margin-top:6px;">
+                            <input type="checkbox" id="mUpPreAnnualAllowed" ${staff.preAnnualAllowed ? 'checked' : ''}>
+                            <span style="font-weight:700; font-size:9px;">Allow this staff member to request next leave year's annual leave in advance</span>
+                        </div>
+                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px; line-height:1.5;">
+                            Grant this only after the GM has approved it. The option then appears on this staff member's Annual Leave form. Their requests still go to the approval queue, and the days count against the next leave year — never against the current balance.
+                            ${staff.preAnnualAllowed && staff.preAnnualAllowedBy ? `<br>Granted by ${staff.preAnnualAllowedBy}${staff.preAnnualAllowedAt ? ' on ' + formatDateToDDMMYYYY(String(staff.preAnnualAllowedAt).split('T')[0]) : ''}.` : ''}
+                        </div>
+                    </div>
+
                     <!-- Core Registry Compliance Fields (Username, DOB, ID Card, Health Licences, etc.) -->
                     ${dynamicFieldsHtml}
 
@@ -9438,6 +9520,19 @@ ${extraInputsHtml}
                         target.quotaActive = document.getElementById('mUpQuotaActive').checked;
                         target.quotaNumber = target.quotaActive ? document.getElementById('mUpQuotaNo').value.trim() : "";
                         target.quotaExpiry = target.quotaActive ? document.getElementById('mUpQuotaExpiry').value : "";
+
+                        // Pre-annual leave is granted per staff member by management.
+                        const preAnnualEl = document.getElementById('mUpPreAnnualAllowed');
+                        if (preAnnualEl) {
+                            target.preAnnualAllowed = preAnnualEl.checked === true;
+                            if (target.preAnnualAllowed) {
+                                target.preAnnualAllowedBy = currentActiveSessionUser?.name || '';
+                                target.preAnnualAllowedAt = new Date().toISOString();
+                            } else {
+                                delete target.preAnnualAllowedBy;
+                                delete target.preAnnualAllowedAt;
+                            }
+                        }
 
                         if (modifyStaffPhotoBase64) {
                             target.photoUrl = modifyStaffPhotoBase64;
@@ -13972,6 +14067,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     }
 
                     function renderLeaveManagementPortlet() {
+                        // Keep the pre-annual option in sync with the signed-in profile.
+                        try { togglePreAnnualLeaveField(); } catch (e) { }
                         const anchor = document.getElementById('balanceCardsContainerAnchor');
                         if (anchor) {
                             anchor.innerHTML = "";
@@ -14067,7 +14164,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
             <td style="padding: 4px 6px; font-size: 10px;"><strong>${item.employee}</strong></td>
-            <td style="padding: 4px 6px; font-size: 10px;">${item.type}</td>
+            <td style="padding: 4px 6px; font-size: 10px;">${item.type}${item.preAnnual ? ` <span class="badge badge-warning" style="font-size:7px;padding:1px 4px;" title="Counts against the next leave year">Next year</span>` : ''}</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.duration}d</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.fromDate ? formatDateToDDMMYYYY(item.fromDate) : formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.toDate ? formatDateToDDMMYYYY(item.toDate) : formatDateToDDMMYYYY(item.date)}</td>
@@ -14122,6 +14219,27 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         if (!duration || duration < 1) { customAlert("No valid working days in selected range (Fridays are excluded)."); return; }
 
+                        // ---- Pre-annual (advance annual leave for the next leave year) ----
+                        const preAnnualBox = document.getElementById('formPreAnnual');
+                        const preAnnualRequested = !!(preAnnualBox && preAnnualBox.checked) && type === 'Annual Leave';
+                        let preAnnualCycle = null;
+                        if (preAnnualRequested) {
+                            const staffEmail = currentActiveSessionUser?.email;
+                            if (!staffEmail || !isStaffPreAnnualEligible(staffEmail)) {
+                                customAlert("Pre-annual leave is available only to staff approved by management. Please speak to the GM first.");
+                                return;
+                            }
+                            preAnnualCycle = getStaffNextLeaveCycleRange(staffEmail);
+                            if (!preAnnualCycle) {
+                                customAlert("Your next leave year could not be calculated. Please check your joining date with management.");
+                                return;
+                            }
+                            if (!isIsoDateInRange(fromDate, preAnnualCycle) || !isIsoDateInRange(toDate, preAnnualCycle)) {
+                                customAlert(`Pre-annual leave must fall inside your next leave year (${formatLeaveCycleLabel(preAnnualCycle)}).`);
+                                return;
+                            }
+                        }
+
                         // Approval logic based on configurable settings
                         const needsApprovalSick = document.getElementById('leaveApprovalSick') ? document.getElementById('leaveApprovalSick').checked : true;
                         const needsApprovalAnnual = document.getElementById('leaveApprovalAnnual') ? document.getElementById('leaveApprovalAnnual').checked : true;
@@ -14134,15 +14252,25 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const needsApprovalSpecial = document.getElementById('leaveApprovalSpecial') ? document.getElementById('leaveApprovalSpecial').checked : true;
                         const needsApproval = (type === "Sick Leave" && needsApprovalSick) || (type === "Annual Leave" && needsApprovalAnnual) || (type === "Family Leave" && needsApprovalFamily) || (type === "Family Responsibility Leave" && needsApprovalFamily) || (type === "Umrah Leave" && needsApprovalUmrah) || (type === "Hajj Leave" && needsApprovalHajj) || (type === "No Paid Leave" && needsApprovalNoPaid) || (type === "Maternity Leave" && needsApprovalMaternity) || (type === "Paternity Leave" && needsApprovalPaternity) || (type === "Special Leave" && needsApprovalSpecial);
                         const isAutoApproved = !needsApproval;
-                        const status = isAutoApproved ? "Approved" : "Pending Approval";
+                        // Pre-annual leave always needs explicit approval, even when the
+                        // leave type is configured for automatic approval.
+                        const status = preAnnualRequested ? "Pending Approval" : (isAutoApproved ? "Approved" : "Pending Approval");
 
                         const mcRadio = document.querySelector('input[name="mcStatus"]:checked');
                         const mcStatus = type === 'Sick Leave' && mcRadio ? mcRadio.value : '';
 
-                        // Ceiling check for all leave types
+                        // Ceiling check. Pre-annual leave skips this year's ceiling and
+                        // is instead checked against next leave year's free days.
                         const email = currentActiveSessionUser?.email;
                         if (email) {
-                            if (type === 'Sick Leave') {
+                            if (preAnnualRequested && preAnnualCycle) {
+                                const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, preAnnualCycle);
+                                const limitNext = getCeilingLimit('Annual Leave', null);
+                                if (usedNext + duration > limitNext) {
+                                    customAlert(`Pre-annual leave exceeds next leave year (${formatLeaveCycleLabel(preAnnualCycle)}): it already has ${usedNext}d booked of ${limitNext}d, and this request adds ${duration}d.`);
+                                    return;
+                                }
+                            } else if (type === 'Sick Leave') {
                                 const mcCheck = mcStatus || 'With MC';
                                 const used = getStaffUsedLeaveDays(email, 'Sick Leave', mcCheck);
                                 const limit = getCeilingLimit('Sick Leave', mcCheck);
@@ -14160,7 +14288,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             }
                         }
 
-                        globalLeaveRepository.push({
+                        const leaveRecord = {
                             id: Date.now(),
                             email: currentActiveSessionUser.email,
                             employee: currentActiveSessionUser.name,
@@ -14174,10 +14302,18 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             status: status,
                             submittedAt: new Date().toISOString(),
                             approvedBy: null
-                        });
+                        };
+                        if (preAnnualRequested && preAnnualCycle) {
+                            leaveRecord.preAnnual = true;
+                            leaveRecord.preAnnualCycleStart = formatIsoDateLocal(preAnnualCycle.start);
+                            leaveRecord.preAnnualCycleEnd = formatIsoDateLocal(preAnnualCycle.end);
+                        }
+                        globalLeaveRepository.push(leaveRecord);
 
-                        // Deduct balance immediately for auto-approved leaves
-                        if (isAutoApproved) {
+                        // Deduct balance immediately for auto-approved leaves only.
+                        // Pre-annual leave belongs to next leave year and must never
+                        // reduce the current balance.
+                        if (status === "Approved" && !preAnnualRequested) {
                             const user = globalRosterRepository.find(u => u.email === currentActiveSessionUser.email);
                             if (user) {
                                 if (type === "Sick Leave") user.sickBalance = Math.max(0, (user.sickBalance || 0) - duration);
@@ -14193,7 +14329,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
 
                         // Show appropriate message
-                        if (isAutoApproved) {
+                        if (preAnnualRequested) {
+                            customAlert("Pre-annual Annual Leave submitted for approval. " + duration +
+                                " day(s) will count against your next leave year (" +
+                                formatLeaveCycleLabel(preAnnualCycle) + "), not this year.");
+                        } else if (isAutoApproved) {
                             customAlert(type + " request auto-approved! " + duration + " day(s) deducted from your balance.");
                         } else {
                             customAlert(type + " request submitted for management approval.");
@@ -14201,7 +14341,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         document.getElementById('formLeaveNote').value = "";
                         // Send external email notification if configured
-                        sendLeaveExternalNotification({ employee: currentActiveSessionUser.name, email: currentActiveSessionUser.email, type, duration, date, fromDate, toDate, note, status });
+                        const notificationNote = preAnnualRequested
+                            ? ((note ? note + ' ' : '') + '[Pre-annual: next leave year ' + formatLeaveCycleLabel(preAnnualCycle) + ']')
+                            : note;
+                        sendLeaveExternalNotification({ employee: currentActiveSessionUser.name, email: currentActiveSessionUser.email, type, duration, date, fromDate, toDate, note: notificationNote, status });
                         // Auto-sync to Leave Tracking for all auto-approved leaves
                         if (status === "Approved") {
                             syncLeaveToTracking({ email: currentActiveSessionUser.email, employee: currentActiveSessionUser.name, type, fromDate, toDate });
@@ -14492,7 +14635,19 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             badge.textContent = checked + ' selected';
                         }
                     }
+                    // Earliest sensible date for the form: the next leave year when
+                    // pre-annual is ticked, otherwise today.
+                    function getLeaveFormBaseDateIso() {
+                        const box = document.getElementById('formPreAnnual');
+                        if (box && box.checked) {
+                            const next = getStaffNextLeaveCycleRange(currentActiveSessionUser?.email);
+                            if (next) return formatIsoDateLocal(next.start);
+                        }
+                        return formatIsoDateLocal(new Date());
+                    }
+
                     function toggleLeaveDateRangeMode() {
+                        togglePreAnnualLeaveField();
                         const duration = parseInt(document.getElementById('formLeaveDuration').value) || 1;
                         const singleMode = document.getElementById('leaveSingleDateMode');
                         const rangeMode = document.getElementById('leaveDateRangeMode');
@@ -14502,11 +14657,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             singleMode.style.display = 'none';
                             rangeMode.style.display = 'grid';
                             durDisplay.style.display = 'block';
-                            const today = new Date().toISOString().split('T')[0];
-                            document.getElementById('formLeaveDateFrom').value = today;
-                            const nextDay = new Date();
-                            nextDay.setDate(nextDay.getDate() + duration - 1);
-                            document.getElementById('formLeaveDateTo').value = nextDay.toISOString().split('T')[0];
+                            const baseIso = getLeaveFormBaseDateIso();
+                            const fromEl = document.getElementById('formLeaveDateFrom');
+                            const toEl = document.getElementById('formLeaveDateTo');
+                            if (fromEl) fromEl.value = baseIso;
+                            if (toEl) toEl.value = leaveAddDaysIso(baseIso, duration - 1);
                             calculateLeaveDuration();
                             generateLeaveRequestMessage();
                         } else {
@@ -14515,6 +14670,63 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             durDisplay.style.display = 'none';
                             generateLeaveRequestMessage();
                         }
+                        updateLeaveCeilingWarning();
+                    }
+
+                    // Show the pre-annual option only when the staff member has the
+                    // permission AND Annual Leave is selected.
+                    function togglePreAnnualLeaveField() {
+                        const field = document.getElementById('preAnnualLeaveField');
+                        const box = document.getElementById('formPreAnnual');
+                        if (!field || !box) return;
+                        const type = document.getElementById('formLeaveType')?.value;
+                        const email = currentActiveSessionUser?.email;
+                        const allowed = !!email && type === 'Annual Leave' && isStaffPreAnnualEligible(email);
+                        field.style.display = allowed ? 'block' : 'none';
+                        if (!allowed) box.checked = false;
+
+                        const hint = document.getElementById('preAnnualCycleHint');
+                        if (allowed && hint) {
+                            const next = getStaffNextLeaveCycleRange(email);
+                            if (next) {
+                                const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, next);
+                                const limit = getCeilingLimit('Annual Leave', null);
+                                hint.innerHTML = `Next leave year: <strong>${formatLeaveCycleLabel(next)}</strong>. ` +
+                                    `${Math.max(0, limit - usedNext)} of ${limit} day(s) still free there. ` +
+                                    `This year's annual balance is not affected.`;
+                            } else {
+                                hint.textContent = 'Next leave year could not be calculated for this profile.';
+                            }
+                        }
+                        togglePreAnnualMode();
+                    }
+
+                    // Apply / remove the next-leave-year date limits.
+                    function togglePreAnnualMode() {
+                        const box = document.getElementById('formPreAnnual');
+                        const on = !!(box && box.checked);
+                        const next = on ? getStaffNextLeaveCycleRange(currentActiveSessionUser?.email) : null;
+                        const fromEl = document.getElementById('formLeaveDateFrom');
+                        const toEl = document.getElementById('formLeaveDateTo');
+                        const singleEl = document.getElementById('formLeaveDate');
+                        [fromEl, toEl, singleEl].forEach(el => {
+                            if (!el) return;
+                            if (next) {
+                                el.min = formatIsoDateLocal(next.start);
+                                el.max = formatIsoDateLocal(next.end);
+                            } else {
+                                el.removeAttribute('min');
+                                el.removeAttribute('max');
+                            }
+                        });
+                        if (next) {
+                            const startIso = formatIsoDateLocal(next.start);
+                            [fromEl, toEl, singleEl].forEach(el => {
+                                if (el && (!el.value || !isIsoDateInRange(el.value, next))) el.value = startIso;
+                            });
+                        }
+                        updateLeaveCeilingWarning();
+                        generateLeaveRequestMessage();
                     }
 
                     function getCurrentLeaveDuration() {
@@ -14545,6 +14757,24 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         } else {
                             const durInput = document.getElementById('formLeaveDuration');
                             if (durInput) duration = parseInt(durInput.value) || 1;
+                        }
+
+                        // Pre-annual requests are measured against next leave year.
+                        const preAnnualBox = document.getElementById('formPreAnnual');
+                        if (preAnnualBox && preAnnualBox.checked && type === 'Annual Leave') {
+                            const next = getStaffNextLeaveCycleRange(email);
+                            if (!next) { warnEl.style.display = 'none'; return; }
+                            const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, next);
+                            const limitNext = getCeilingLimit('Annual Leave', null);
+                            const freeNext = Math.max(0, limitNext - usedNext);
+                            warnEl.style.display = 'block';
+                            if (usedNext + duration > limitNext) {
+                                warnEl.innerHTML = `⚠️ Pre-annual exceeds your next leave year allocation: ${usedNext}d already booked of ${limitNext}d, requesting ${duration}d — only ${freeNext}d free.`;
+                            } else {
+                                warnEl.innerHTML = `ℹ️ Pre-annual leave for <strong>${formatLeaveCycleLabel(next)}</strong>. ` +
+                                    `This year's balance stays untouched; ${freeNext}d free next leave year. Management approval is required.`;
+                            }
+                            return;
                         }
 
                         let used, limit, label;
@@ -14722,7 +14952,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             item.approvedBy = resolution === "Approved" ? (currentActiveSessionUser?.name || 'Unknown') : (currentActiveSessionUser?.name || 'Unknown');
                             if (resolution === "Approved") {
                                 const user = globalRosterRepository.find(u => u.email === item.email);
-                                if (user) {
+                                // Pre-annual days belong to the next leave year, so they
+                                // must not touch the current annual balance.
+                                if (user && !item.preAnnual) {
                                     if (item.type === "Sick Leave") user.sickBalance = Math.max(0, (user.sickBalance || 0) - item.duration);
                                     if (item.type === "Annual Leave") user.annualBalance = Math.max(0, (user.annualBalance || 0) - item.duration);
                                     if (item.type === "Family Leave") user.familyBalance = Math.max(0, (user.familyBalance || 0) - item.duration);
@@ -14731,11 +14963,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 const toDate = item.toDate || item.date;
                                 syncLeaveToTracking({ email: item.email, employee: item.employee, type: item.type, fromDate, toDate });
                                 // Notify the staff member
+                                const preAnnualSuffix = item.preAnnual
+                                    ? ` It counts against your next leave year (${item.preAnnualCycleStart ? formatDateToDDMMYYYY(item.preAnnualCycleStart) : 'next year'}), not this year.`
+                                    : '';
                                 pushNotification({
                                     type: 'system',
                                     tier: 'success',
                                     title: 'Leave Approved',
-                                    text: `Your ${item.type} request for ${item.duration} day(s) has been approved by ${item.approvedBy}.`,
+                                    text: `Your ${item.type} request for ${item.duration} day(s) has been approved by ${item.approvedBy}.${preAnnualSuffix}`,
                                     icon: '✅',
                                     recipientEmail: item.email
                                 });
@@ -14838,6 +15073,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
                     ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
                     Status: <strong>${item.status}</strong>
+                    ${item.preAnnual ? `<br><strong>Pre-annual</strong> — counts against the next leave year, not this one.` : ''}
                     ${b.pastDays > 0 ? `<br>Already taken (locked): <strong>${b.pastDays} day(s)</strong> up to ${formatDateToDDMMYYYY(b.pastEnd)}` : ''}
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
@@ -14871,6 +15107,15 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (newFrom < b.today) { customAlert("The new start date cannot be in the past."); return; }
                         if (newTo < newFrom) { customAlert("End date cannot be before the start date."); return; }
 
+                        // Pre-annual leave must stay inside its target leave year.
+                        if (item.preAnnual) {
+                            const preCycle = getLeaveCycleRangeFromStartIso(item.preAnnualCycleStart) || getStaffNextLeaveCycleRange(item.email);
+                            if (!preCycle || !isIsoDateInRange(newFrom, preCycle) || !isIsoDateInRange(newTo, preCycle)) {
+                                customAlert(`This is pre-annual leave for ${formatLeaveCycleLabel(preCycle)}. The new dates must stay inside that leave year.`);
+                                return;
+                            }
+                        }
+
                         const duration = calculateLeaveBusinessDays(newFrom, newTo);
                         if (!duration || duration < 1) {
                             customAlert("That range has no working days (Fridays and public holidays are excluded).");
@@ -14885,8 +15130,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         // An approved leave already consumed its full duration from the
                         // balance. Give back the portion being rescheduled - it is deducted
-                        // again only if the new request gets approved.
-                        if (item.status === 'Approved' && remainingOriginal > 0) {
+                        // again only if the new request gets approved. Pre-annual leave
+                        // never touched the current balance, so there is nothing to refund.
+                        if (item.status === 'Approved' && !item.preAnnual && remainingOriginal > 0) {
                             adjustLeaveBalanceDelta(item.email, item.type, remainingOriginal);
                         }
 
@@ -14909,7 +15155,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 note: `Rescheduled from ${oldRange} on ${stamp}. Original note: ${originalNote}`,
                                 status: 'Pending Approval',
                                 submittedAt: new Date().toISOString(),
-                                approvedBy: null
+                                approvedBy: null,
+                                // Keep the pre-annual marker so it still counts against
+                                // the next leave year after it is re-approved.
+                                ...(item.preAnnual ? {
+                                    preAnnual: true,
+                                    preAnnualCycleStart: item.preAnnualCycleStart || null,
+                                    preAnnualCycleEnd: item.preAnnualCycleEnd || null
+                                } : {})
                             });
                         } else {
                             item.fromDate = newFrom;
@@ -14945,8 +15198,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
 
                             // Approved leave already deducted its duration - give the
-                            // cancelled portion back to the balance.
-                            if (live.status === 'Approved' && remainingDays > 0) {
+                            // cancelled portion back to the balance. Pre-annual leave was
+                            // never deducted from the current balance.
+                            if (live.status === 'Approved' && remainingDays > 0 && !live.preAnnual) {
                                 adjustLeaveBalanceDelta(live.email, live.type, remainingDays);
                             }
 
@@ -14988,14 +15242,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
                         const from = item.fromDate || item.date;
                         const to = item.toDate || item.date;
-                        const refund = item.status === 'Approved' ? (item.duration || 0) : 0;
+                        const refund = (item.status === 'Approved' && !item.preAnnual) ? (item.duration || 0) : 0;
                         const refundNote = refund > 0 ? ` ${refund} day(s) will be returned to the ${item.type} balance.` : '';
                         customConfirm(`Permanently delete ${item.employee}'s ${item.type} record for ${formatDateToDDMMYYYY(from)} → ${formatDateToDDMMYYYY(to)}?${refundNote}`, function () {
                             const live = globalLeaveRepository.find(l => l.id === id);
                             if (!live) return;
                             const liveFrom = live.fromDate || live.date;
                             const liveTo = live.toDate || live.date;
-                            if (String(live.status || '').toLowerCase() === 'approved' && live.duration > 0) {
+                            if (String(live.status || '').toLowerCase() === 'approved' && live.duration > 0 && !live.preAnnual) {
                                 adjustLeaveBalanceDelta(live.email, live.type, live.duration);
                             }
                             globalLeaveRepository = globalLeaveRepository.filter(l => l.id !== id);
@@ -19483,7 +19737,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
             <td style="padding:4px 6px;font-size:10px;"><strong>${item.employee}</strong></td>
-            <td style="padding:4px 6px;font-size:10px;">${item.type}</td>
+            <td style="padding:4px 6px;font-size:10px;">${item.type}${item.preAnnual ? ` <span class="badge badge-warning" style="font-size:7px;padding:1px 4px;" title="Counts against the next leave year">Next year</span>` : ''}</td>
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${item.duration}d</td>
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${item.submittedAt ? formatDateToDDMMYYYY(item.submittedAt.split('T')[0]) : '-'}</td>

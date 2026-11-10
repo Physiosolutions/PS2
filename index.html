@@ -8173,6 +8173,27 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     </select>
                                 </div>
 
+                                <!-- Pre-annual (next leave year) - only for staff approved by management -->
+                                <div id="preAnnualLeaveField"
+                                    style="display: none; background: var(--primary-light); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                                    <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; margin: 0;">
+                                        <input type="checkbox" id="formPreAnnual"
+                                            onchange="togglePreAnnualMode()"
+                                            style="margin-top: 2px; flex: 0 0 auto;">
+                                        <span style="font-size: 10px; font-weight: 700; color: var(--text-heading); line-height: 1.35;">
+                                            Pre-annual leave (next leave year)
+                                            <span
+                                                style="display: block; font-size: 9px; font-weight: 500; color: var(--text-muted); margin-top: 2px;">
+                                                Management has approved you for this. The days count against your next
+                                                leave year, not this year, and still need final approval.
+                                            </span>
+                                        </span>
+                                    </label>
+                                    <div id="preAnnualCycleHint"
+                                        style="font-size: 9px; color: var(--text-muted); margin-top: 6px; line-height: 1.45;">
+                                    </div>
+                                </div>
+
                                 <!-- Single Date Mode (for 1-day leave) -->
                                 <div id="leaveSingleDateMode"
                                     style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
