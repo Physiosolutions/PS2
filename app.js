@@ -6191,7 +6191,7 @@
                         if (targetModuleId === 'leave_management') {
                             setTimeout(() => {
                                 populateLeaveTypeDropdown();
-                                toggleLeaveDateRangeMode();
+                                initializeLeaveRequestFormDefaults();
                                 toggleLeaveMcField();
                                 generateLeaveRequestMessage();
                             }, 50);
@@ -14144,10 +14144,13 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const isPending = item.status === "Pending Approval";
                             const isAllowedToApprove = isLeaveApprover;
                             const leaveEndDate = item.toDate || item.date;
+                            // A request that is still pending has not been approved or
+                            // taken yet, so its owner can correct it even when the date
+                            // is in the past. Approved leave keeps the past-day lock.
                             const canManageThisLeave = (item.email === currentActiveSessionUser.email || isLeaveApprover)
                                 && item.status !== 'Rejected'
                                 && item.status !== 'Cancelled'
-                                && leaveEndDate >= leaveTodayIso();
+                                && (isPending || leaveEndDate >= leaveTodayIso());
                             const actionButtons = [
                                 (isPending && isAllowedToApprove)
                                     ? `<button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
@@ -14646,6 +14649,19 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         return formatIsoDateLocal(new Date());
                     }
 
+                    // Default a new request to today (or the next leave year for
+                    // pre-annual) instead of leaving an old hard-coded date in the form.
+                    function initializeLeaveRequestFormDefaults() {
+                        const base = getLeaveFormBaseDateIso();
+                        const single = document.getElementById('formLeaveDate');
+                        const from = document.getElementById('formLeaveDateFrom');
+                        const to = document.getElementById('formLeaveDateTo');
+                        if (single) single.value = base;
+                        if (from) from.value = base;
+                        if (to) to.value = base;
+                        toggleLeaveDateRangeMode();
+                    }
+
                     function toggleLeaveDateRangeMode() {
                         togglePreAnnualLeaveField();
                         const duration = parseInt(document.getElementById('formLeaveDuration').value) || 1;
@@ -15060,10 +15076,24 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             return;
                         }
                         const b = splitLeaveBounds(item);
-                        if (b.to < b.today) {
+                        const isPendingRequest = item.status === 'Pending Approval';
+                        if (!isPendingRequest && b.to < b.today) {
                             customAlert("This leave is fully in the past. Days already taken cannot be changed.");
                             return;
                         }
+
+                        // Pending requests may be corrected in full (including past dates);
+                        // approved leave keeps the today-forward rule.
+                        const mcFieldHtml = item.type === 'Sick Leave' ? `
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label>MC Status</label>
+                    <select id="leaveModMc">
+                        ${!item.mcStatus ? '<option value="" selected>Not set</option>' : ''}
+                        <option value="With MC" ${item.mcStatus === 'With MC' ? 'selected' : ''}>With MC</option>
+                        <option value="Without MC" ${item.mcStatus === 'Without MC' ? 'selected' : ''}>Without MC</option>
+                    </select>
+                </div>` : '';
+                        const minAttr = isPendingRequest ? '' : `min="${b.today}"`;
 
                         const mount = document.getElementById('systemGlobalModalMount');
                         mount.innerHTML = `
@@ -15074,23 +15104,26 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
                     Status: <strong>${item.status}</strong>
                     ${item.preAnnual ? `<br><strong>Pre-annual</strong> — counts against the next leave year, not this one.` : ''}
-                    ${b.pastDays > 0 ? `<br>Already taken (locked): <strong>${b.pastDays} day(s)</strong> up to ${formatDateToDDMMYYYY(b.pastEnd)}` : ''}
+                    ${!isPendingRequest && b.pastDays > 0 ? `<br>Already taken (locked): <strong>${b.pastDays} day(s)</strong> up to ${formatDateToDDMMYYYY(b.pastEnd)}` : ''}
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
-                    <label>New Start Date</label>
-                    <input type="date" id="leaveModFrom" min="${b.today}" value="${b.futureStart}">
+                    <label>Start Date</label>
+                    <input type="date" id="leaveModFrom" ${minAttr} value="${isPendingRequest ? b.from : b.futureStart}">
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
-                    <label>New End Date</label>
-                    <input type="date" id="leaveModTo" min="${b.today}" value="${b.to}">
+                    <label>End Date</label>
+                    <input type="date" id="leaveModTo" ${minAttr} value="${b.to}">
                 </div>
+                ${mcFieldHtml}
                 <div style="font-size:9px; color:var(--text-muted); margin-bottom:10px;">
-                    Only today and future days can be changed. Days already taken stay recorded. Rescheduled leave goes back for approval.
+                    ${isPendingRequest
+                        ? 'This request is still Pending Approval, so nothing has been approved or taken yet. You can correct the dates and MC status here, or use the trash button in the table to withdraw it.'
+                        : 'Only today and future days can be changed. Days already taken stay recorded. Rescheduled leave goes back for approval.'}
                 </div>
                 <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px;">
                     <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Close</button>
-                    <button class="action-btn" style="background:var(--danger);" onclick="cancelLeaveRemainingDays(${id})">Cancel Remaining Days</button>
-                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeaveReschedule(${id})">Save New Dates</button>
+                    ${isPendingRequest ? '' : `<button class="action-btn" style="background:var(--danger);" onclick="cancelLeaveRemainingDays(${id})">Cancel Remaining Days</button>`}
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeaveReschedule(${id})">${isPendingRequest ? 'Save Correction' : 'Save New Dates'}</button>
                 </div>
             </div>
         </div>`;
@@ -15100,11 +15133,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (!item || !canModifyLeaveRecord(item)) return;
                         const b = splitLeaveBounds(item);
+                        const isPendingRequest = item.status === 'Pending Approval';
 
                         const newFrom = document.getElementById('leaveModFrom').value;
                         const newTo = document.getElementById('leaveModTo').value;
                         if (!newFrom || !newTo) { customAlert("Please pick both the new start and end date."); return; }
-                        if (newFrom < b.today) { customAlert("The new start date cannot be in the past."); return; }
+                        // A pending request was never approved or taken, so even a past
+                        // date may be corrected. Approved leave keeps today-forward.
+                        if (!isPendingRequest && newFrom < b.today) { customAlert("The new start date cannot be in the past."); return; }
                         if (newTo < newFrom) { customAlert("End date cannot be before the start date."); return; }
 
                         // Pre-annual leave must stay inside its target leave year.
@@ -15122,11 +15158,63 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             return;
                         }
 
+                        // Correct the Medical Certificate status as well (Sick Leave).
+                        const mcSelect = document.getElementById('leaveModMc');
+                        const newMcStatus = (item.type === 'Sick Leave' && mcSelect)
+                            ? mcSelect.value
+                            : (item.mcStatus || '');
+                        const mcChanged = item.type === 'Sick Leave' && newMcStatus !== (item.mcStatus || '');
+                        if (item.type === 'Sick Leave' && mcSelect && newMcStatus) {
+                            // A pending record is not counted yet. An approved record in
+                            // the same bucket is counted, so exclude it from the check.
+                            const usedInNewBucket = getStaffUsedLeaveDays(item.email, 'Sick Leave', newMcStatus)
+                                - (item.status === 'Approved' && item.mcStatus === newMcStatus ? (item.duration || 0) : 0);
+                            const limit = getCeilingLimit('Sick Leave', newMcStatus);
+                            if (usedInNewBucket + duration > limit) {
+                                customAlert(`${newMcStatus} ceiling exceeded: ${usedInNewBucket}d already used of ${limit}d, and this correction is ${duration}d.`);
+                                return;
+                            }
+                        }
+
                         const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
                         const oldRange = formatDateToDDMMYYYY(b.from) + ' → ' + formatDateToDDMMYYYY(b.to);
+                        const oldMcStatus = item.mcStatus || '';
                         const originalNote = item.note || '';
                         const originalDuration = item.duration || calculateLeaveBusinessDays(b.from, b.to) || 0;
                         const remainingOriginal = Math.max(0, originalDuration - b.pastDays);
+
+                        // Pending request: correct the whole record in place. Nothing was
+                        // approved/deducted, so there is no split and no balance movement.
+                        if (isPendingRequest) {
+                            const changes = [];
+                            if (newFrom !== b.from || newTo !== b.to) {
+                                const oldLabel = b.from === b.to ? formatDateToDDMMYYYY(b.from) : oldRange;
+                                const newLabel = newFrom === newTo
+                                    ? formatDateToDDMMYYYY(newFrom)
+                                    : formatDateToDDMMYYYY(newFrom) + ' → ' + formatDateToDDMMYYYY(newTo);
+                                changes.push(`dates ${oldLabel} → ${newLabel}`);
+                            }
+                            if (mcChanged) changes.push(`MC ${oldMcStatus || 'not set'} → ${newMcStatus}`);
+
+                            item.fromDate = newFrom;
+                            item.toDate = newTo;
+                            item.date = newFrom;
+                            item.duration = duration;
+                            if (item.type === 'Sick Leave') item.mcStatus = newMcStatus;
+                            item.status = 'Pending Approval';
+                            item.approvedBy = null;
+                            item.submittedAt = new Date().toISOString();
+                            if (changes.length) {
+                                item.note = (item.note || '') + ` [Corrected ${changes.join('; ')} ${stamp}]`;
+                            }
+
+                            closeSystemModalBox();
+                            customAlert("Request corrected. It is still waiting for approval.");
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderLeaveManagementPortlet();
+                            return;
+                        }
 
                         // An approved leave already consumed its full duration from the
                         // balance. Give back the portion being rescheduled - it is deducted
@@ -15141,6 +15229,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             item.toDate = b.pastEnd;
                             item.duration = b.pastDays;
                             item.date = b.from;
+                            if (item.type === 'Sick Leave') item.mcStatus = newMcStatus;
                             item.note = (item.note || '') + ` [${b.pastDays}d already taken kept; remainder rescheduled ${stamp}]`;
                             globalLeaveRepository.push({
                                 id: Date.now() + Math.floor(Math.random() * 1000),
@@ -15151,7 +15240,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 date: newFrom,
                                 fromDate: newFrom,
                                 toDate: newTo,
-                                mcStatus: item.mcStatus || '',
+                                mcStatus: newMcStatus || item.mcStatus || '',
                                 note: `Rescheduled from ${oldRange} on ${stamp}. Original note: ${originalNote}`,
                                 status: 'Pending Approval',
                                 submittedAt: new Date().toISOString(),
@@ -15169,6 +15258,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             item.toDate = newTo;
                             item.date = newFrom;
                             item.duration = duration;
+                            if (item.type === 'Sick Leave') item.mcStatus = newMcStatus;
                             item.status = 'Pending Approval';
                             item.approvedBy = null;
                             item.submittedAt = new Date().toISOString();
@@ -15230,8 +15320,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (!currentActiveSessionUser || !item) return false;
                         if (allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) return true;
                         const status = String(item.status || '').toLowerCase();
+                        // A staff member may withdraw a request that is still pending
+                        // (nothing has been approved or taken yet), plus clean up old
+                        // rejected/cancelled rows.
                         return item.email === currentActiveSessionUser.email
-                            && (status === 'rejected' || status === 'cancelled');
+                            && (status === 'rejected' || status === 'cancelled' || status === 'pending approval');
                     }
 
                     function deleteLeaveRecord(id) {
