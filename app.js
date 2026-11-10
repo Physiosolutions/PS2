@@ -8446,18 +8446,26 @@
                                     changesText += renderChangeLine(labelFor(key), asText(formatChangeValue(key, value)));
                                 }
                             }
-                            if (!changesText) {
-                                changesText = `<span style="font-style:italic; opacity:.7; font-size:10px;">No net changes detected.</span>`;
+                            const hasNetChanges = !!changesText;
+                            if (!hasNetChanges) {
+                                changesText = `<span style="font-style:italic; opacity:.7; font-size:10px;">Already applied — the current roster matches every proposed value. This request was probably committed from another device and synced back.</span>`;
                             }
 
                             const isAuthorizedToAudit = allowedProfileApproverRoles.includes(currentActiveSessionUser.position);
 
-                            let trActionButtons = isAuthorizedToAudit ? `
+                            let trActionButtons;
+                            if (!hasNetChanges) {
+                                trActionButtons = isAuthorizedToAudit
+                                    ? `<button class="action-btn" style="background:var(--text-muted); padding:4px 8px;" onclick="dismissProfileChangeset(${req.id})">Dismiss</button>`
+                                    : `<span style="font-style:italic; opacity:0.6; font-size:10px;">No action needed</span>`;
+                            } else {
+                                trActionButtons = isAuthorizedToAudit ? `
                     <div style="display:flex; gap:6px;">
                         <button class="action-btn" style="background:var(--success); padding:4px 8px;" onclick="auditProfilesChangeset(${req.id}, true)">Verify & Commit</button>
                         <button class="action-btn" style="background:var(--danger); padding:4px 8px;" onclick="auditProfilesChangeset(${req.id}, false)">Reject</button>
                     </div>
                 ` : `<span style="font-style:italic; opacity:0.6; font-size:10px;">Audit Limited (Approver restriction)</span>`;
+                            }
 
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
@@ -8467,6 +8475,23 @@
                 `;
                             container.appendChild(tr);
                         });
+                    }
+
+                    // Drop a stale change request from the registry when it no longer
+                    // carries any difference against the current roster.
+                    function dismissProfileChangeset(reqId) {
+                        if (!currentActiveSessionUser || !allowedProfileApproverRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("Only a profile approver can dismiss change requests.");
+                            return;
+                        }
+                        const index = staffProfileChangesetPipeline.findIndex(r => r.id === reqId);
+                        if (index !== -1) {
+                            staffProfileChangesetPipeline.splice(index, 1);
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderAdminApprovalsQueue();
+                            customAlert("Stale change request removed from the registry.");
+                        }
                     }
 
                     function auditProfilesChangeset(reqId, commitState) {
@@ -15840,14 +15865,20 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 requestedChanges.healthLicence = "";
                                 requestedChanges.healthLicenceExpiry = "";
                             }
-                        } else {
-                            globalCoreStaffFields.forEach(field => {
-                                const inputEl = document.getElementById(`rqField_${field.key}`);
-                                if (inputEl) {
-                                    requestedChanges[field.key] = inputEl.value.trim();
-                                }
-                            });
                         }
+                        // Always capture the rest of the core profile fields (DOB, ID card,
+                        // visa, joining date, contract expiry, last working day, ...).
+                        // Previously this loop only ran when the Health License checkbox was
+                        // absent, so edits to those fields were silently dropped and the
+                        // registry showed "No net changes detected".
+                        globalCoreStaffFields.forEach(field => {
+                            if (field.key === 'username') return;
+                            if (field.key === 'healthLicence' || field.key === 'healthLicenceExpiry') return;
+                            const inputEl = document.getElementById(`rqField_${field.key}`);
+                            if (inputEl) {
+                                requestedChanges[field.key] = inputEl.value.trim();
+                            }
+                        });
 
                         const rqQuotaActive = document.getElementById('rqQuotaActive');
                         if (rqQuotaActive) {
@@ -15926,8 +15957,12 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                     function triggerAlertLogsSummary() {
                         if (pruneExpiredNotifications()) persistNotificationStores();
+                        const visibleLogs = systemAlertLogs.filter(isAlertVisibleToCurrentUser);
                         let list = `<div style="display:flex; flex-direction:column; gap:6px;">`;
-                        systemAlertLogs.forEach(log => {
+                        if (visibleLogs.length === 0) {
+                            list += `<div style="text-align:center;color:var(--text-muted);font-style:italic;padding:12px;font-size:11px;">No alerts for your account.</div>`;
+                        }
+                        visibleLogs.forEach(log => {
                             // If the notification includes an action path, render an interactive transition button
                             const actionButton = log.action
                                 ? `<button class="action-btn" style="padding:4px 8px; font-size:9px; margin-top:6px; background:var(--primary); font-weight:700;" onclick="closeSystemModalBox(); ${log.action}">💬 Open Chat</button>`
