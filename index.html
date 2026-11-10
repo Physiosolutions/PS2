@@ -8223,7 +8223,7 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                             style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);"
                                             data-trans-key="From Date">From Date</label>
                                         <input type="date" id="formLeaveDateFrom" value=""
-                                            onchange="calculateLeaveDuration();generateLeaveRequestMessage();toggleLeaveMcField();updateLeaveCeilingWarning()"
+                                            onchange="handleLeaveRangeDateChange()"
                                             style="margin-top: 4px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-inner); color: var(--text-body); width: 100%; font-family: inherit; font-size: 11px;">
                                     </div>
                                     <div class="form-group" style="margin-bottom: 0;">
@@ -8231,7 +8231,7 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                             style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);"
                                             data-trans-key="To Date">To Date</label>
                                         <input type="date" id="formLeaveDateTo" value=""
-                                            onchange="calculateLeaveDuration();generateLeaveRequestMessage();toggleLeaveMcField();updateLeaveCeilingWarning()"
+                                            onchange="handleLeaveRangeDateChange()"
                                             style="margin-top: 4px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-inner); color: var(--text-body); width: 100%; font-family: inherit; font-size: 11px;">
                                     </div>
                                 </div>

@@ -14736,6 +14736,56 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         updateLeaveCeilingWarning();
                     }
 
+                    // Called whenever a From/To range date changes. Collapsing the
+                    // range back to a single day returns the form to 1-day mode, so
+                    // the duration field comes back instead of disappearing for good.
+                    function handleLeaveRangeDateChange() {
+                        calculateLeaveDuration();
+                        const fromEl = document.getElementById('formLeaveDateFrom');
+                        const toEl = document.getElementById('formLeaveDateTo');
+                        const from = fromEl ? fromEl.value : '';
+                        const to = toEl ? toEl.value : '';
+                        if (from && to && from === to) {
+                            collapseLeaveRangeToSingleDate(from);
+                            return;
+                        }
+                        if (from && to) {
+                            const durInput = document.getElementById('formLeaveDuration');
+                            if (durInput) {
+                                durInput.value = String(Math.max(1, calculateLeaveBusinessDays(from, to)));
+                            }
+                        }
+                        generateLeaveRequestMessage();
+                        toggleLeaveMcField();
+                        updateLeaveCeilingWarning();
+                    }
+
+                    function collapseLeaveRangeToSingleDate(dateIso) {
+                        const durInput = document.getElementById('formLeaveDuration');
+                        if (durInput) durInput.value = '1';
+                        const single = document.getElementById('formLeaveDate');
+                        if (single) single.value = dateIso;
+                        const fromEl = document.getElementById('formLeaveDateFrom');
+                        const toEl = document.getElementById('formLeaveDateTo');
+                        if (fromEl) fromEl.value = dateIso;
+                        if (toEl) toEl.value = dateIso;
+
+                        const singleMode = document.getElementById('leaveSingleDateMode');
+                        const rangeMode = document.getElementById('leaveDateRangeMode');
+                        const durDisplay = document.getElementById('leaveDurationDisplay');
+                        if (singleMode) singleMode.style.display = 'grid';
+                        if (rangeMode) rangeMode.style.display = 'none';
+                        if (durDisplay) durDisplay.style.display = 'none';
+                        const durValue = document.getElementById('leaveDurationValue');
+                        if (durValue) durValue.innerText = '1 Day';
+                        const durNote = document.getElementById('leaveDurationNote');
+                        if (durNote) durNote.innerText = '';
+
+                        generateLeaveRequestMessage();
+                        toggleLeaveMcField();
+                        updateLeaveCeilingWarning();
+                    }
+
                     // Show the pre-annual option only when the staff member has the
                     // permission AND Annual Leave is selected.
                     function togglePreAnnualLeaveField() {
