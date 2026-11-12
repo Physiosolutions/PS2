@@ -12764,6 +12764,91 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         return leaveDates;
                     }
 
+                    // ------------------------------------------------------------------
+                    // Leave range helpers
+                    // A leave request covers every day from fromDate to toDate, so the
+                    // attendance sheets must mark each of those days, not just the start.
+                    // Fridays are the weekly off and never counted as leave days.
+                    // ------------------------------------------------------------------
+                    function isoDateFromDateObject(d) {
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    }
+
+                    function parseIsoDateParts(isoDate) {
+                        if (!isoDate || typeof isoDate !== 'string') return null;
+                        const parts = isoDate.split('-');
+                        if (parts.length !== 3) return null;
+                        const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10), d = parseInt(parts[2], 10);
+                        if (!y || !m || !d) return null;
+                        return new Date(y, m - 1, d);
+                    }
+
+                    // End date of a leave record. Newer records carry fromDate/toDate;
+                    // older ones only have date + duration, in which case walk forward
+                    // over business days (Fridays excluded).
+                    function getLeaveRecordEndIso(record) {
+                        if (!record) return null;
+                        const startIso = record.fromDate || record.date;
+                        if (!startIso) return null;
+                        if (record.toDate && record.toDate >= startIso) return record.toDate;
+                        const duration = parseInt(record.duration, 10) || 1;
+                        if (duration <= 1) return startIso;
+                        const cursor = parseIsoDateParts(startIso);
+                        if (!cursor) return startIso;
+                        let counted = 1;
+                        let guard = 0;
+                        while (counted < duration && guard < 400) {
+                            cursor.setDate(cursor.getDate() + 1);
+                            guard++;
+                            if (cursor.getDay() !== 5) counted++;
+                        }
+                        return isoDateFromDateObject(cursor);
+                    }
+
+                    // Returns the approved leave record covering this ISO date, or null.
+                    function getApprovedLeaveRecordOnDate(email, isoDate, repository) {
+                        if (!email || !isoDate) return null;
+                        const parsed = parseIsoDateParts(isoDate);
+                        if (!parsed || parsed.getDay() === 5) return null;
+                        const repo = repository || globalLeaveRepository || [];
+                        for (let i = 0; i < repo.length; i++) {
+                            const l = repo[i];
+                            if (!l || l.email !== email || l.status !== 'Approved') continue;
+                            const startIso = l.fromDate || l.date;
+                            if (!startIso) continue;
+                            const endIso = getLeaveRecordEndIso(l) || startIso;
+                            if (isoDate < startIso || isoDate > endIso) continue;
+                            return l;
+                        }
+                        return null;
+                    }
+
+                    // Pre-built "email|isoDate" -> leave record index covering every
+                    // day of every approved leave. Use this instead of scanning the
+                    // repository inside table render loops.
+                    function buildApprovedLeaveDateIndex(repository) {
+                        const index = {};
+                        const repo = repository || globalLeaveRepository || [];
+                        repo.forEach(l => {
+                            if (!l || l.status !== 'Approved') return;
+                            const startIso = l.fromDate || l.date;
+                            if (!startIso) return;
+                            const endIso = getLeaveRecordEndIso(l) || startIso;
+                            const cursor = parseIsoDateParts(startIso);
+                            const end = parseIsoDateParts(endIso);
+                            if (!cursor || !end) return;
+                            let guard = 0;
+                            while (cursor <= end && guard < 400) {
+                                if (cursor.getDay() !== 5) {
+                                    index[l.email + '|' + isoDateFromDateObject(cursor)] = l;
+                                }
+                                cursor.setDate(cursor.getDate() + 1);
+                                guard++;
+                            }
+                        });
+                        return index;
+                    }
+
                     function renderWorkingDaysDashboard() {
                         const year = document.getElementById('wdYearFilter').value;
                         const month = document.getElementById('wdMonthFilter').value;
@@ -17914,22 +17999,34 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         }
 
                         const currentDraft = localUserOTSheetDraft[route][globalOTSelectedYear][globalOTSelectedMonth];
+                        let autoLeaveMarksChanged = false;
 
                         cycleDatesList.forEach(item => {
                             const dateKey = item.fullDate;
                             const isFri = (item.dayName === "Fri");
-                            const draft = currentDraft[dateKey] || { patients150: 0, patients200: 0, hours: 0, attendance: isFri ? "OFF" : "Present", notes: "" };
+                            const defaultAttendance = isFri ? "OFF" : "Present";
+                            if (!currentDraft[dateKey]) {
+                                currentDraft[dateKey] = { patients150: 0, patients200: 0, hours: 0, attendance: defaultAttendance, notes: "" };
+                            }
+                            const draft = currentDraft[dateKey];
 
-                            // Checks for approved leaves to auto-populate the sheet
+                            // Any approved leave covering this day (not just its first day)
+                            // is reflected in Attendance Status.
                             const isoDate = convertDateKeyToISO(dateKey);
-                            const matchedApprovedLeave = globalLeaveRepository.find(l =>
-                                l.email === route &&
-                                l.status === "Approved" &&
-                                l.date === isoDate
-                            );
+                            const matchedApprovedLeave = getApprovedLeaveRecordOnDate(route, isoDate);
 
                             if (matchedApprovedLeave) {
-                                draft.attendance = matchedApprovedLeave.type;
+                                if (draft.attendance !== matchedApprovedLeave.type) {
+                                    draft.attendance = matchedApprovedLeave.type;
+                                    draft.autoLeave = true;
+                                    autoLeaveMarksChanged = true;
+                                }
+                            } else if (draft.autoLeave) {
+                                // The leave was withdrawn or rescheduled: drop the stale marker
+                                // instead of leaving the day marked for the rest of the cycle.
+                                draft.attendance = defaultAttendance;
+                                delete draft.autoLeave;
+                                autoLeaveMarksChanged = true;
                             }
 
                             // Check if date is past Last Working Day
@@ -17971,6 +18068,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             container.appendChild(tr);
                         });
 
+                        if (autoLeaveMarksChanged) persistOTSheetDraftSoon();
                         calculateAndRenderLocalOTTimesheetFootTotals();
                     }
 
@@ -18050,6 +18148,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             currentDraft[dateKey][property] = parseFloat(value) || 0;
                         } else {
                             currentDraft[dateKey][property] = value;
+                            // A manual attendance choice replaces the auto leave marker.
+                            if (property === 'attendance') delete currentDraft[dateKey].autoLeave;
                         }
                         persistOTSheetDraftSoon();
                         refreshOTSheetTotalsSoon();
@@ -18444,13 +18544,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             };
                         });
 
-                        // Pre-index approved leaves for O(1) lookup by email|date
-                        const leaveLookup = {};
-                        (globalLeaveRepository || []).forEach(l => {
-                            if (l.status === "Approved") {
-                                leaveLookup[l.email + '|' + l.date] = l;
-                            }
-                        });
+                        // Pre-index approved leaves for O(1) lookup by email|date.
+                        // Indexes every day of each leave range, not only its first day.
+                        const leaveLookup = buildApprovedLeaveDateIndex();
 
                         scheduleDates.forEach(d => {
                             const tr = document.createElement('tr');
@@ -18929,13 +19025,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             otherLeaves: {}
                         }));
 
-                        // Pre-index approved leaves for O(1) lookup by email|date
-                        const leaveLookup = {};
-                        (globalLeaveRepository || []).forEach(l => {
-                            if (l.status === "Approved") {
-                                leaveLookup[l.email + '|' + l.date] = l;
-                            }
-                        });
+                        // Pre-index approved leaves for O(1) lookup by email|date.
+                        // Indexes every day of each leave range, not only its first day.
+                        const leaveLookup = buildApprovedLeaveDateIndex();
 
                         datesList.forEach(d => {
                             const tr = document.createElement('tr');
@@ -19187,6 +19279,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                         const activeTherapists = globalRosterRepository.filter(u => u.position === "Physiotherapist" || u.position === "Head of Physio" || u.position === "Admin" || u.position === "General Manager");
                         const datesList = generateOTTimesheet31DaysList();
+                        const leaveLookup = buildApprovedLeaveDateIndex();
                         let discrepancyCount = 0;
 
                         datesList.forEach(d => {
@@ -19202,11 +19295,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     { patients150: "", patients200: "", hours: "", attendance: "", notes: "" };
 
                                 const isoDate = convertDateKeyToISO(dateKey);
-                                const matchedApprovedLeave = globalLeaveRepository.find(l =>
-                                    l.email === staff.email &&
-                                    l.status === "Approved" &&
-                                    l.date === isoDate
-                                );
+                                const matchedApprovedLeave = leaveLookup[staff.email + '|' + isoDate];
                                 const rosterShift = (activeCompiledShiftSchedules[staff.email] && activeCompiledShiftSchedules[staff.email][isoDate]) || "";
                                 const isRosterOff = (rosterShift === "OFF");
 
@@ -19383,6 +19472,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             otherLeaves: {}
                         }));
 
+                        const leaveLookup = buildApprovedLeaveDateIndex();
+
                         datesList.forEach(d => {
                             htmlContent += `<tr><td style="text-align:left; font-weight:bold;">${d.fullDate}</td><td>${d.dayName}</td>`;
 
@@ -19390,7 +19481,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 const adminSubmissions = globalAdminComparativeDatabase[staff.email]?.[globalOTSelectedYear]?.[globalOTSelectedMonth] || {};
                                 const cell = adminSubmissions[d.fullDate] || { patients150: 0, patients200: 0, hours: 0, attendance: "Present", notes: "" };
                                 const isoDate = convertDateKeyToISO(d.fullDate);
-                                const matchedApprovedLeave = globalLeaveRepository.find(l => l.email === staff.email && l.status === "Approved" && l.date === isoDate);
+                                const matchedApprovedLeave = leaveLookup[staff.email + '|' + isoDate];
                                 const rosterShift = (activeCompiledShiftSchedules[staff.email] && activeCompiledShiftSchedules[staff.email][isoDate]) || "";
                                 const isRosterOff = (rosterShift === "OFF");
                                 const isFri = (d.dayName === "Fri");
@@ -19494,6 +19585,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             email: t.email, sum150: 0, sum200: 0, present: 0, sick: 0, off: 0, frl: 0, annual: 0, absent: 0, otherLeaves: {}
                         }));
 
+                        const leaveLookup = buildApprovedLeaveDateIndex();
+
                         datesList.forEach(d => {
                             let rowStr = `${d.fullDate},${d.dayName}`;
                             activeTherapists.forEach((staff, idx) => {
@@ -19501,7 +19594,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 const cell = adminSubmissions[d.fullDate] || { patients150: 0, patients200: 0, hours: 0, attendance: "Present", notes: "" };
 
                                 const isoDate = convertDateKeyToISO(d.fullDate);
-                                const matchedApprovedLeave = globalLeaveRepository.find(l => l.email === staff.email && l.status === "Approved" && l.date === isoDate);
+                                const matchedApprovedLeave = leaveLookup[staff.email + '|' + isoDate];
                                 const rosterShift = (activeCompiledShiftSchedules[staff.email] && activeCompiledShiftSchedules[staff.email][isoDate]) || "";
                                 const isRosterOff = (rosterShift === "OFF");
                                 const isFri = (d.dayName === "Fri");
