@@ -10420,18 +10420,19 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
 
                     function saveActiveOTSheetDraft() {
-                        // Collect all current OT input field values and persist to sessionStorage
-                        try {
-                            const cycleKey = `otDraft_${globalOTSelectedYear}_${globalOTSelectedMonth}`;
-                            const draftData = {};
-                            document.querySelectorAll('[id^="otInput_"]').forEach(el => {
-                                draftData[el.id] = el.value;
-                            });
-                            sessionStorage.setItem(cycleKey, JSON.stringify(draftData));
-                            customAlert("Draft state successfully cached. Your entries are saved for this session.");
-                        } catch (e) {
-                            customAlert("Draft cached in memory. (Storage unavailable in this context)");
+                        // The interactive timesheet keeps its entries in localUserOTSheetDraft
+                        // and saves them automatically; this button now forces an immediate
+                        // write (and cloud sync) instead of looking for non-existent fields.
+                        const route = currentActiveSessionUser ? currentActiveSessionUser.email : null;
+                        const currentDraft = route
+                            ? localUserOTSheetDraft[route]?.[globalOTSelectedYear]?.[globalOTSelectedMonth]
+                            : null;
+                        if (!currentDraft || Object.keys(currentDraft).length === 0) {
+                            customAlert("There is nothing to save for this billing period yet.");
+                            return;
                         }
+                        flushOTSheetDraftNow();
+                        customAlert("Draft saved for this billing period. It will sync to the cloud automatically.");
                     }
 
 
@@ -17973,6 +17974,74 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         calculateAndRenderLocalOTTimesheetFootTotals();
                     }
 
+                    // Persisting the whole workspace on every keystroke used to trigger
+                    // a full module re-render (that is what made the sheet feel like it
+                    // was hanging). The draft only needs a light, throttled write plus a
+                    // queued cloud sync.
+                    let otSheetDraftPersistTimer = null;
+                    let otSheetTotalsFrame = null;
+
+                    function persistOTSheetDraftSoon() {
+                        if (otSheetDraftPersistTimer) return;
+                        otSheetDraftPersistTimer = setTimeout(function () {
+                            otSheetDraftPersistTimer = null;
+                            flushOTSheetDraftNow();
+                        }, 400);
+                    }
+
+                    function flushOTSheetDraftNow() {
+                        if (otSheetDraftPersistTimer) {
+                            clearTimeout(otSheetDraftPersistTimer);
+                            otSheetDraftPersistTimer = null;
+                        }
+                        try { localStorage.setItem('physioOTSheetDraft', JSON.stringify(localUserOTSheetDraft)); } catch (e) { }
+                        try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.scheduleSync(); } catch (e) { }
+                    }
+
+                    function refreshOTSheetTotalsSoon() {
+                        if (otSheetTotalsFrame) return;
+                        if (typeof requestAnimationFrame !== 'function') {
+                            calculateAndRenderLocalOTTimesheetFootTotals();
+                            return;
+                        }
+                        otSheetTotalsFrame = requestAnimationFrame(function () {
+                            otSheetTotalsFrame = null;
+                            calculateAndRenderLocalOTTimesheetFootTotals();
+                        });
+                    }
+
+                    // Clicking/tapping a numeric OT cell should let the user type the new
+                    // figure immediately. Number inputs do not support the text-selection
+                    // API in every browser, so a default 0 is cleared on focus (with a grey
+                    // placeholder) and put back on blur if nothing was typed.
+                    function selectOTGridInputValue(field) {
+                        if (!field || !field.classList || !field.classList.contains('ot-grid-input')) return;
+                        if (field.disabled || field.readOnly) return;
+                        if (field.value === '') return;
+                        if (parseFloat(field.value) === 0) {
+                            field.dataset.otZeroValue = field.value;
+                            field.placeholder = '0';
+                            field.value = '';
+                            return;
+                        }
+                        try { field.select(); } catch (e) { }
+                    }
+                    document.addEventListener('focusin', function (event) {
+                        selectOTGridInputValue(event.target);
+                    });
+                    document.addEventListener('click', function (event) {
+                        selectOTGridInputValue(event.target);
+                    });
+                    document.addEventListener('focusout', function (event) {
+                        const field = event.target;
+                        if (!field || !field.classList || !field.classList.contains('ot-grid-input')) return;
+                        if (field.dataset && field.dataset.otZeroValue !== undefined) {
+                            if (field.value === '') field.value = field.dataset.otZeroValue;
+                            delete field.dataset.otZeroValue;
+                            field.placeholder = '';
+                        }
+                    });
+
                     function updateLocalOTTimesheetCell(dateKey, property, value) {
                         const route = currentActiveSessionUser.email;
                         const currentDraft = localUserOTSheetDraft[route][globalOTSelectedYear][globalOTSelectedMonth];
@@ -17982,8 +18051,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         } else {
                             currentDraft[dateKey][property] = value;
                         }
-                        persistCoreStores();
-                        calculateAndRenderLocalOTTimesheetFootTotals();
+                        persistOTSheetDraftSoon();
+                        refreshOTSheetTotalsSoon();
                     }
 
                     function calculateAndRenderLocalOTTimesheetFootTotals() {
