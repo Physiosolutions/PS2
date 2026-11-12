@@ -1528,6 +1528,13 @@
                         therapistAttendance: ["Admin", "General Manager", "Head of Physio", "Asst. Operations Manager"],
                         dutyRoster: ["Admin", "General Manager", "Head of Physio", "Asst. Operations Manager"],
                         leaveSummaryViewAll: ["Admin", "General Manager"],
+                        // Granular Leave Summary tab visibility. These tabs expose
+                        // other staff's medical / attendance data, so each one is
+                        // controlled separately per role.
+                        leaveSummarySickMatrix: ["Admin", "General Manager", "Head of Physio"],
+                        leaveSummaryFrlMatrix: ["Admin", "General Manager", "Head of Physio"],
+                        leaveSummaryTracking: ["Admin", "General Manager", "Head of Physio", "Asst. Operations Manager"],
+                        leaveSummaryWorkingDays: ["Admin", "General Manager", "Head of Physio", "Asst. Operations Manager"],
                         dischargeEditAfterLock: ["Admin", "General Manager"],
                         followup: ["Admin", "General Manager", "Asst. Operations Manager", "IT Operations", "Fdo", "executive senior fdo", "executive fdo", "Head of Physio", "Physiotherapist", "Head of Training and Recruitment"],
                         assignedPractitioner: ["Head of Physio", "Physiotherapist", "Head of Training and Recruitment"],
@@ -1564,6 +1571,10 @@
                     let allowedTherapistAttendanceRoles = globalPermissionRegistry.therapistAttendance;
                     let allowedDutyRosterRoles = globalPermissionRegistry.dutyRoster;
                     let allowedLeaveSummaryViewAllRoles = globalPermissionRegistry.leaveSummaryViewAll;
+                    let allowedLeaveSummarySickMatrixRoles = globalPermissionRegistry.leaveSummarySickMatrix;
+                    let allowedLeaveSummaryFrlMatrixRoles = globalPermissionRegistry.leaveSummaryFrlMatrix;
+                    let allowedLeaveSummaryTrackingRoles = globalPermissionRegistry.leaveSummaryTracking;
+                    let allowedLeaveSummaryWorkingDaysRoles = globalPermissionRegistry.leaveSummaryWorkingDays;
                     let allowedDischargeEditAfterLockRoles = globalPermissionRegistry.dischargeEditAfterLock;
                     let allowedFollowupRoles = globalPermissionRegistry.followup;
                     let allowedAssignedPractitionerRoles = globalPermissionRegistry.assignedPractitioner;
@@ -7232,6 +7243,10 @@
                             { key: 'volumeEntryGrid', label: '📊 Volume Entry Grid', note: 'Who can access the daily volume data grid and view ALL staff analytics' },
                             { key: 'dutyRoster', label: '👥 Duty Roster', note: 'Who can VIEW the daily staff shift assignment widget on the dashboard (shows which therapists are on which floor/time slot today)' },
                             { key: 'leaveSummaryViewAll', label: '🌴 Leave Summary View All', note: 'Who can view all staff leave records (not just own)' },
+                            { key: 'leaveSummarySickMatrix', label: '🤒 Sick Leave Matrix', note: 'Who can open the Sick Leave Matrix tab in the Leave Summary Sheet' },
+                            { key: 'leaveSummaryFrlMatrix', label: '🤱 FRL Matrix', note: 'Who can open the FRL Matrix tab in the Leave Summary Sheet' },
+                            { key: 'leaveSummaryTracking', label: '📅 Leave Tracking', note: 'Who can open the Leave Tracking tab in the Leave Summary Sheet' },
+                            { key: 'leaveSummaryWorkingDays', label: '📊 Working Days', note: 'Who can open the Working Days report tab in the Leave Summary Sheet' },
                             { key: 'dischargeEditAfterLock', label: '✏️ Discharge Edit After Lock', note: 'Who can edit a discharge summary even after it is locked' },
                             { key: 'followup', label: '🔍 Follow Up Cases', note: 'Who can register new patient follow-up cases and access the follow-up ledger' },
                             { key: 'assignedPractitioner', label: '🩺 Assigned Practitioner', note: 'Which staff roles appear in the Assigned Practitioner dropdown for follow-up case assignments' },
@@ -7262,6 +7277,10 @@
                             volumeEntryGrid: allowedVolumeEntryGridRoles,
                             dutyRoster: allowedDutyRosterRoles,
                             leaveSummaryViewAll: allowedLeaveSummaryViewAllRoles,
+                            leaveSummarySickMatrix: allowedLeaveSummarySickMatrixRoles,
+                            leaveSummaryFrlMatrix: allowedLeaveSummaryFrlMatrixRoles,
+                            leaveSummaryTracking: allowedLeaveSummaryTrackingRoles,
+                            leaveSummaryWorkingDays: allowedLeaveSummaryWorkingDaysRoles,
                             dischargeEditAfterLock: allowedDischargeEditAfterLockRoles,
                             followup: allowedFollowupRoles,
                             assignedPractitioner: allowedAssignedPractitionerRoles,
@@ -7348,6 +7367,10 @@
                             volumeEntryGrid: { arr: allowedVolumeEntryGridRoles, name: 'Volume Entry Grid' },
                             dutyRoster: { arr: allowedDutyRosterRoles, name: 'Duty Roster' },
                             leaveSummaryViewAll: { arr: allowedLeaveSummaryViewAllRoles, name: 'Leave Summary View All' },
+                            leaveSummarySickMatrix: { arr: allowedLeaveSummarySickMatrixRoles, name: 'Sick Leave Matrix' },
+                            leaveSummaryFrlMatrix: { arr: allowedLeaveSummaryFrlMatrixRoles, name: 'FRL Matrix' },
+                            leaveSummaryTracking: { arr: allowedLeaveSummaryTrackingRoles, name: 'Leave Tracking' },
+                            leaveSummaryWorkingDays: { arr: allowedLeaveSummaryWorkingDaysRoles, name: 'Working Days' },
                             dischargeEditAfterLock: { arr: allowedDischargeEditAfterLockRoles, name: 'Discharge Edit After Lock' },
                             followup: { arr: allowedFollowupRoles, name: 'Follow Up Cases' },
                             assignedPractitioner: { arr: allowedAssignedPractitionerRoles, name: 'Assigned Practitioner' },
@@ -7390,6 +7413,7 @@
 
                         customAlert("All authorization matrices saved and synchronized successfully.");
                         savePermissionRegistry(); // persist to localStorage
+                        applyLeaveSummaryTabPermissions();
                         persistCoreStores();      // push the change to the cloud copy
                         synchronizeWorkspaceCoreStatus();
                         var fdoMod = document.getElementById('mod_fdo_attendance');
@@ -12429,7 +12453,40 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     }
 
                     // ===== LEAVE SUMMARY TAB SWITCHING =====
+                    // Per-role visibility for the sensitive Leave Summary tabs.
+                    function canViewLeaveSummaryTab(tab) {
+                        const map = {
+                            sick: 'leaveSummarySickMatrix',
+                            frl: 'leaveSummaryFrlMatrix',
+                            tracking: 'leaveSummaryTracking',
+                            workingdays: 'leaveSummaryWorkingDays'
+                        };
+                        const key = map[tab];
+                        if (!key) return true; // Leave Ledger stays available
+                        const list = globalPermissionRegistry[key];
+                        if (!Array.isArray(list)) return false;
+                        return !!currentActiveSessionUser && list.includes(currentActiveSessionUser.position);
+                    }
+
+                    function applyLeaveSummaryTabPermissions() {
+                        document.querySelectorAll('.ls-tab-btn[data-lstab]').forEach(btn => {
+                            const allowed = canViewLeaveSummaryTab(btn.dataset.lstab);
+                            btn.style.display = allowed ? '' : 'none';
+                        });
+                        ['sick', 'frl', 'tracking', 'workingdays'].forEach(tab => {
+                            if (canViewLeaveSummaryTab(tab)) return;
+                            const panel = document.getElementById('ls_tab_' + tab);
+                            if (panel && panel.style.display !== 'none') {
+                                switchLeaveSummaryTab('ledger');
+                            }
+                        });
+                    }
+
                     function switchLeaveSummaryTab(tab) {
+                        if (!canViewLeaveSummaryTab(tab)) {
+                            customAlert("You do not have permission to view this leave report. Please contact your administrator.");
+                            return;
+                        }
                         document.querySelectorAll('.ls-tab-btn').forEach(b => {
                             if (b.dataset.lstab === tab) {
                                 b.style.background = 'var(--primary)';
@@ -14706,6 +14763,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (single) single.value = base;
                         if (from) from.value = base;
                         if (to) to.value = base;
+                        // Bind the range handlers in JS too, so the collapse-to-one-day
+                        // behaviour works even if the browser keeps an older index.html
+                        // with the previous inline onchange attribute.
+                        [from, to].forEach(el => {
+                            if (!el || el.dataset.rangeHandlerBound === '1') return;
+                            el.dataset.rangeHandlerBound = '1';
+                            el.addEventListener('change', handleLeaveRangeDateChange);
+                        });
                         toggleLeaveDateRangeMode();
                     }
 
@@ -16363,6 +16428,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             populateLeaveExporterDropdownFilters();
                         }
                         if (globalActiveViewportModule === 'leave_summary') {
+                            applyLeaveSummaryTabPermissions();
                             renderLeaveLedgerWorkspace();
                             // Refresh sick matrix if that tab is visible
                             const sickTab = document.getElementById('ls_tab_sick');
