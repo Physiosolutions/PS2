@@ -17952,8 +17952,61 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         document.getElementById(wrapperId).style.display = isChecked ? 'block' : 'none';
                     }
 
+                    // One canonical list of attendance statuses for the overtime and
+                    // operational attendance sheets. This keeps legacy labels such as
+                    // "Family Leave" from showing up as an extra, uncoloured option
+                    // next to "FRL".
+                    function getOtAttendanceOptions() {
+                        return [
+                            "Present", "Absent", "OFF", "Sick Leave", "Annual Leave", "FRL",
+                            "No Paid Leave", "Umrah Leave", "Hajj Leave", "Maternity Leave",
+                            "Paternity Leave", "Special Leave"
+                        ];
+                    }
+
+                    function normalizeOtAttendanceStatus(value) {
+                        if (value === null || value === undefined) return value;
+                        const raw = String(value).trim();
+                        if (!raw) return raw;
+                        const aliases = {
+                            'frl': 'FRL',
+                            'family leave': 'FRL',
+                            'family responsibility leave': 'FRL',
+                            'family resp. leave': 'FRL',
+                            'no pay leave': 'No Paid Leave',
+                            'no paid leave': 'No Paid Leave',
+                            'sick leave (with mc)': 'Sick Leave',
+                            'sick leave (without mc)': 'Sick Leave',
+                            'sick': 'Sick Leave',
+                            'annual': 'Annual Leave',
+                            'umrah': 'Umrah Leave',
+                            'hajj': 'Hajj Leave',
+                            'maternity': 'Maternity Leave',
+                            'paternity': 'Paternity Leave',
+                            'special leave': 'Special Leave',
+                            'present': 'Present',
+                            'absent': 'Absent',
+                            'off': 'OFF'
+                        };
+                        return aliases[raw.toLowerCase()] || raw;
+                    }
+
+                    function buildOtAttendanceOptionsHtml(selectedValue) {
+                        const selected = normalizeOtAttendanceStatus(selectedValue);
+                        const options = getOtAttendanceOptions();
+                        let html = options
+                            .map(v => `<option value="${v}" ${selected === v ? 'selected' : ''}>${v}</option>`)
+                            .join('');
+                        // Keep a genuinely custom value visible instead of silently changing it.
+                        if (selected && !options.includes(selected)) {
+                            html += `<option value="${selected}" selected>${selected}</option>`;
+                        }
+                        return html;
+                    }
+
                     function getOtAttColor(val) {
                         const el = function (id) { var e = document.getElementById(id); return e && e.value ? e.value : null; };
+                        const key = normalizeOtAttendanceStatus(val);
                         const map = {
                             'Present': el('colPresent') || globalStatusColors.Present || '#b7e9ff',
                             'OFF': el('colOff') || globalStatusColors.OFF || '#cbd5e1',
@@ -17968,7 +18021,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             'Paternity Leave': el('colPaternity') || globalStatusColors.Paternity || '#3b82f6',
                             'Special Leave': el('colSpecial') || globalStatusColors.Special || '#14b8a6'
                         };
-                        return (map[val] || 'transparent') + '88';
+                        return (map[key] || 'transparent') + '88';
                     }
                     function renderActiveStaffOTCycleInteractiveTable() {
                         const container = document.getElementById('activeStaffOTCycleInputsTableBody');
@@ -18010,14 +18063,25 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                             const draft = currentDraft[dateKey];
 
+                            // Clean up legacy labels such as "Family Leave" so the select
+                            // only ever shows the canonical statuses (Family Leave -> FRL).
+                            const normalizedStored = normalizeOtAttendanceStatus(draft.attendance);
+                            if (normalizedStored !== draft.attendance) {
+                                draft.attendance = normalizedStored;
+                                autoLeaveMarksChanged = true;
+                            }
+
                             // Any approved leave covering this day (not just its first day)
                             // is reflected in Attendance Status.
                             const isoDate = convertDateKeyToISO(dateKey);
                             const matchedApprovedLeave = getApprovedLeaveRecordOnDate(route, isoDate);
+                            const leaveAttendanceType = matchedApprovedLeave
+                                ? normalizeOtAttendanceStatus(matchedApprovedLeave.type)
+                                : null;
 
-                            if (matchedApprovedLeave) {
-                                if (draft.attendance !== matchedApprovedLeave.type) {
-                                    draft.attendance = matchedApprovedLeave.type;
+                            if (leaveAttendanceType) {
+                                if (draft.attendance !== leaveAttendanceType) {
+                                    draft.attendance = leaveAttendanceType;
                                     draft.autoLeave = true;
                                     autoLeaveMarksChanged = true;
                                 }
@@ -18051,14 +18115,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
             </td>
             <td style="background:${getOtAttColor(draft.attendance)};">
                 <select class="ot-select-attendance" onchange="updateLocalOTTimesheetCell('${dateKey}', 'attendance', this.value); this.parentElement.style.background=getOtAttColor(this.value)" ${disabledAttr}>
-                    ${(() => {
-                                    const stdOptions = ["Present", "Absent", "OFF", "Sick Leave", "Annual Leave", "FRL"];
-                                    let html = stdOptions.map(v => `<option value="${v}" ${draft.attendance === v ? 'selected' : ''}>${v}</option>`).join('');
-                                    if (draft.attendance && !stdOptions.includes(draft.attendance)) {
-                                        html += `<option value="${draft.attendance}" selected>${draft.attendance}</option>`;
-                                    }
-                                    return html;
-                                })()}
+                    ${buildOtAttendanceOptionsHtml(draft.attendance)}
                 </select>
             </td>
             <td>
@@ -18760,14 +18817,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
             </td>
             <td>
                 <select id="admInput_${staff.email}_attendance" class="ot-select-attendance">
-                    ${(() => {
-                                    const stdOptions = ["Present", "Absent", "OFF", "Sick Leave", "Annual Leave", "FRL"];
-                                    let html = stdOptions.map(v => `<option value="${v}" ${record.attendance === v ? 'selected' : ''}>${v}</option>`).join('');
-                                    if (record.attendance && !stdOptions.includes(record.attendance)) {
-                                        html += `<option value="${record.attendance}" selected>${record.attendance}</option>`;
-                                    }
-                                    return html;
-                                })()}
+                    ${buildOtAttendanceOptionsHtml(record.attendance)}
                 </select>
             </td>
             <td>
@@ -19067,6 +19117,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 } else if (isFri) {
                                     selectedAttendance = "OFF"; // Friday default has next priority
                                 }
+                                selectedAttendance = normalizeOtAttendanceStatus(selectedAttendance);
 
                                 // Check if date is past therapist's Last Working Day
                                 const isPastLastDay = isDateAfterLastWorkingDay(d.fullDate, staff.lastDayOfWorking);
@@ -19107,14 +19158,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                 </td>
                 <td style="background:${getOtAttColor(selectedAttendance)}; ${cellStyle}">
                     <select id="${inputAttId}" class="ot-select-attendance" style="width:90px; font-size:9px;" ${disabledAttr} onchange="document.getElementById('${inputAttId}').parentElement.style.background=getOtAttColor(this.value);supervisorAutoSaveSingleCell('${staff.email}','${d.fullDate}','${input150Id}','${input200Id}','${inputAttId}','${inputNotesId}')">
-                        ${(() => {
-                                        const stdOptions = ["Present", "Absent", "OFF", "Sick Leave", "Annual Leave", "FRL"];
-                                        let html = stdOptions.map(v => `<option value="${v}" ${selectedAttendance === v ? 'selected' : ''}>${v}</option>`).join('');
-                                        if (selectedAttendance && !stdOptions.includes(selectedAttendance)) {
-                                            html += `<option value="${selectedAttendance}" selected>${selectedAttendance}</option>`;
-                                        }
-                                        return html;
-                                    })()}
+                        ${buildOtAttendanceOptionsHtml(selectedAttendance)}
                     </select>
                 </td>
                 <td style="${cellStyle}">
@@ -19299,12 +19343,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 const rosterShift = (activeCompiledShiftSchedules[staff.email] && activeCompiledShiftSchedules[staff.email][isoDate]) || "";
                                 const isRosterOff = (rosterShift === "OFF");
 
-                                let expectedAttendanceTherapist = therapistData.attendance;
-                                let expectedAttendanceAdmin = adminData.attendance;
+                                let expectedAttendanceTherapist = normalizeOtAttendanceStatus(therapistData.attendance);
+                                let expectedAttendanceAdmin = normalizeOtAttendanceStatus(adminData.attendance);
 
                                 if (matchedApprovedLeave) {
-                                    expectedAttendanceTherapist = matchedApprovedLeave.type;
-                                    expectedAttendanceAdmin = matchedApprovedLeave.type;
+                                    const leaveAtt = normalizeOtAttendanceStatus(matchedApprovedLeave.type);
+                                    expectedAttendanceTherapist = leaveAtt;
+                                    expectedAttendanceAdmin = leaveAtt;
                                 } else if (isRosterOff) {
                                     expectedAttendanceTherapist = "OFF";
                                     expectedAttendanceAdmin = "OFF";
@@ -19489,6 +19534,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 if (matchedApprovedLeave) { selectedAttendance = matchedApprovedLeave.type; }
                                 else if (isRosterOff) { selectedAttendance = "OFF"; }
                                 else if (isFri) { selectedAttendance = "OFF"; }
+                                selectedAttendance = normalizeOtAttendanceStatus(selectedAttendance);
                                 const p150Val = cell.patients150 || 0;
                                 const p200Val = cell.patients200 || 0;
                                 const tTotal = therapistTotals[idx];
@@ -19603,6 +19649,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 if (matchedApprovedLeave) { selectedAttendance = matchedApprovedLeave.type; }
                                 else if (isRosterOff) { selectedAttendance = "OFF"; }
                                 else if (isFri) { selectedAttendance = "OFF"; }
+                                selectedAttendance = normalizeOtAttendanceStatus(selectedAttendance);
 
                                 const p150Val = cell.patients150 || 0;
                                 const p200Val = cell.patients200 || 0;
