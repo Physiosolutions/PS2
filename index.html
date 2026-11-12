@@ -10948,6 +10948,32 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
 
     <div id="systemGlobalModalMount"></div>
 
+    <!-- Shown only when a saved session is about to be restored, so a refresh
+         never flashes the sign-in screen while the app and cloud data load. -->
+    <div id="sessionBootSplash"
+        style="display:none; position:fixed; inset:0; z-index:99999; background:var(--bg-body,#f4f6f9); align-items:center; justify-content:center; flex-direction:column; gap:14px;">
+        <div
+            style="width:34px; height:34px; border:3px solid rgba(0,75,135,0.18); border-top-color:#004b87; border-radius:50%; animation:spin 0.8s linear infinite;">
+        </div>
+        <div style="font-size:12px; font-weight:600; letter-spacing:0.4px; color:#5b6b7b;">Restoring your session…</div>
+    </div>
+    <script>
+        (function () {
+            try {
+                var hasSession = sessionStorage.getItem('physioActiveSessionEmail')
+                    || localStorage.getItem('physioSavedSession')
+                    || sessionStorage.getItem('physioPendingCloudLogin');
+                var splash = document.getElementById('sessionBootSplash');
+                if (hasSession && splash) splash.style.display = 'flex';
+            } catch (e) { }
+            // Failsafe: never leave the splash covering the app forever.
+            setTimeout(function () {
+                var splash = document.getElementById('sessionBootSplash');
+                if (splash) splash.style.display = 'none';
+            }, 20000);
+        })();
+    </script>
+
 <script src="cloud-sync.js"></script>
 <script src="app.js"></script>
 <script src="universal_importer.js"></script>

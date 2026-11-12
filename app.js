@@ -5050,31 +5050,184 @@
                         initializeAuthenticatedSessionContext(newAdmin);
                     }
 
-                    function resumePendingCloudLogin() {
-                        let pending = null;
-                        try { pending = JSON.parse(sessionStorage.getItem('physioPendingCloudLogin') || 'null'); } catch (e) { }
-                        if (!pending || !pending.identifier) return;
-                        try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
-                        const user = findLocalAccount(pending.identifier);
-                        if (user && user.password === pending.password && user.active !== false) {
-                            initializeAuthenticatedSessionContext(user);
+                    // ===== SESSION RESTORE =====
+                    // The tab-scoped marker survives a refresh, but a reopened tab or a
+                    // browser that drops sessionStorage loses it, so a small device-level
+                    // record (email + timestamp only) is kept as well. It is excluded from
+                    // cloud sync in cloud-sync.js: a session must never travel to another
+                    // device. Exit/Logout clears both markers explicitly.
+                    const PHYSIO_SAVED_SESSION_KEY = 'physioSavedSession';
+                    const PHYSIO_SAVED_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+                    let physioSessionRestorePending = false;
+                    let physioSessionRestoreAttempts = 0;
+                    let physioSessionRestoreDefinitiveFailure = false;
+
+                    function readSavedSessionEmail() {
+                        try {
+                            const tabEmail = sessionStorage.getItem('physioActiveSessionEmail');
+                            if (tabEmail) return tabEmail;
+                        } catch (e) { }
+                        try {
+                            const raw = localStorage.getItem(PHYSIO_SAVED_SESSION_KEY);
+                            if (!raw) return '';
+                            const record = JSON.parse(raw);
+                            if (!record || !record.email) return '';
+                            const savedAt = Number(record.at) || 0;
+                            if (savedAt && (Date.now() - savedAt) > PHYSIO_SAVED_SESSION_TTL_MS) {
+                                localStorage.removeItem(PHYSIO_SAVED_SESSION_KEY);
+                                return '';
+                            }
+                            return String(record.email);
+                        } catch (e) {
+                            return '';
                         }
                     }
 
-                    // Keep the signed-in user across the automatic cloud reload so one
-                    // login is enough even when the workspace is being refreshed.
-                    function resumeSavedSession() {
-                        if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) return;
-                        let email = '';
-                        try { email = sessionStorage.getItem('physioActiveSessionEmail') || ''; } catch (e) { }
+                    function rememberSavedSession(email) {
                         if (!email) return;
-                        const user = globalRosterRepository.find(u => String(u.email || '').toLowerCase() === email.toLowerCase());
-                        if (!user || user.active === false) {
-                            try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
-                            return;
+                        try { sessionStorage.setItem('physioActiveSessionEmail', email); } catch (e) { }
+                        try { localStorage.setItem(PHYSIO_SAVED_SESSION_KEY, JSON.stringify({ email: email, at: Date.now() })); } catch (e) { }
+                    }
+
+                    function forgetSavedSession() {
+                        try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
+                        try { localStorage.removeItem(PHYSIO_SAVED_SESSION_KEY); } catch (e) { }
+                    }
+
+                    function hasSessionRestoreIntent() {
+                        if (readSavedSessionEmail()) return true;
+                        try { return !!sessionStorage.getItem('physioPendingCloudLogin'); } catch (e) { return false; }
+                    }
+
+                    function hideSessionBootSplash() {
+                        const splash = document.getElementById('sessionBootSplash');
+                        if (splash) splash.style.display = 'none';
+                    }
+
+                    function findSessionAccount(email) {
+                        const key = String(email || '').toLowerCase().trim();
+                        if (!key) return null;
+                        return globalRosterRepository.find(u => String(u.email || '').toLowerCase().trim() === key)
+                            || globalRosterRepository.find(u => String(u.username || '').toLowerCase().trim() === key)
+                            || null;
+                    }
+
+                    function reloadRosterFromStorage() {
+                        try {
+                            const raw = localStorage.getItem('physioStaffDirectoryRepository');
+                            if (!raw) return false;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed) && parsed.length) {
+                                // Update in place: other modules may hold a reference to the
+                                // original roster array.
+                                globalRosterRepository.length = 0;
+                                parsed.forEach(u => globalRosterRepository.push(u));
+                                return true;
+                            }
+                        } catch (e) { }
+                        return false;
+                    }
+
+                    function resumePendingCloudLogin() {
+                        let pending = null;
+                        try { pending = JSON.parse(sessionStorage.getItem('physioPendingCloudLogin') || 'null'); } catch (e) { }
+                        if (!pending || !pending.identifier) return false;
+                        const user = findLocalAccount(pending.identifier);
+                        // The roster may still be arriving from the cloud. Keep the pending
+                        // login so the retry can finish it instead of silently logging out.
+                        if (!user) return false;
+                        try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
+                        if (user.password === pending.password && user.active !== false) {
+                            initializeAuthenticatedSessionContext(user);
+                            return true;
+                        }
+                        return false;
+                    }
+
+                    // Keep the signed-in user across refreshes and automatic cloud reloads
+                    // so one login is enough.
+                    function resumeSavedSession() {
+                        if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) return true;
+                        const email = readSavedSessionEmail();
+                        if (!email) return false;
+                        let user = findSessionAccount(email);
+                        if (!user) {
+                            // cloud-sync.js starts pulling the cloud copy while this script is
+                            // still parsing, so the in-memory roster can be one step behind
+                            // localStorage. Re-read it before deciding anything.
+                            reloadRosterFromStorage();
+                            user = findSessionAccount(email);
+                        }
+                        if (!user) return false;
+                        if (user.active === false) {
+                            // Deactivated on purpose: do not keep trying.
+                            forgetSavedSession();
+                            physioSessionRestoreDefinitiveFailure = true;
+                            return false;
                         }
                         initializeAuthenticatedSessionContext(user);
+                        return true;
                     }
+
+                    function finishSessionRestoreFailure() {
+                        physioSessionRestorePending = false;
+                        hideSessionBootSplash();
+                        applySavedLoginTheme();
+                        renderAuthViewLayoutBox();
+                    }
+
+                    function attemptSessionRestore() {
+                        if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) return true;
+                        if (resumePendingCloudLogin()) {
+                            physioSessionRestorePending = false;
+                            hideSessionBootSplash();
+                            return true;
+                        }
+                        if (resumeSavedSession()) {
+                            physioSessionRestorePending = false;
+                            hideSessionBootSplash();
+                            return true;
+                        }
+                        return false;
+                    }
+
+                    function beginSessionRestore() {
+                        physioSessionRestorePending = hasSessionRestoreIntent();
+                        physioSessionRestoreDefinitiveFailure = false;
+                        if (attemptSessionRestore()) return true;
+                        if (physioSessionRestoreDefinitiveFailure) {
+                            finishSessionRestoreFailure();
+                            return false;
+                        }
+                        if (!physioSessionRestorePending) return false;
+                        // Roster/cloud pull is still settling. Retry briefly instead of
+                        // showing the sign-in screen and dropping a valid session.
+                        physioSessionRestoreAttempts = 0;
+                        const retry = function () {
+                            if (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser) {
+                                physioSessionRestorePending = false;
+                                hideSessionBootSplash();
+                                return;
+                            }
+                            physioSessionRestoreAttempts += 1;
+                            if (attemptSessionRestore()) return;
+                            if (physioSessionRestoreDefinitiveFailure) {
+                                finishSessionRestoreFailure();
+                                return;
+                            }
+                            if (physioSessionRestoreAttempts >= 6) {
+                                finishSessionRestoreFailure();
+                                return;
+                            }
+                            setTimeout(retry, 700);
+                        };
+                        setTimeout(retry, 400);
+                        return false;
+                    }
+
+                    // Decide this before the first login layout paints so a refresh with a
+                    // live session never flashes the sign-in screen.
+                    physioSessionRestorePending = hasSessionRestoreIntent();
 
                     window.executeAuthenticationChallenge = function () {
                         const emailInput = document.getElementById('authFieldUserEmail');
@@ -5150,6 +5303,11 @@
                     };
 
                     function renderAuthViewLayoutBox() {
+                        // A saved session is still being validated at boot. Keep the sign-in
+                        // form hidden (the boot splash is showing) instead of flashing it.
+                        if (physioSessionRestorePending && !(typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser)) {
+                            return;
+                        }
                         // Hide app container (logout state)
                         document.getElementById('appContainer').classList.add('hidden');
 
@@ -5411,6 +5569,10 @@
                     }
 
                     function applySavedLoginTheme() {
+                        // Do not reveal the sign-in screen while a session restore is pending.
+                        if (physioSessionRestorePending && !(typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser)) {
+                            return;
+                        }
                         const savedConfig = localStorage.getItem('physioLoginConfig');
 
                         const authContainer = document.getElementById('authContainer');
@@ -5891,7 +6053,7 @@
                         }
                         currentActiveSessionUser = userObject;
                         portalSwitchOriginEmail = userObject.email;
-                        try { sessionStorage.setItem('physioActiveSessionEmail', userObject.email); } catch (e) { }
+                        rememberSavedSession(userObject.email);
                         try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
                         scheduleStaffCloudSync(userObject);
                         syncPatientTrackerVisibility();
@@ -5939,6 +6101,8 @@
                         triggerSelectedModuleShift(initialView);
                         synchronizeWorkspaceCoreStatus();
                         checkAndResetLeaveBalances();
+                        physioSessionRestorePending = false;
+                        hideSessionBootSplash();
                     }
 
                     function checkAndResetLeaveBalances() {
@@ -16051,7 +16215,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         customConfirm("Do you wish to exit the current operations session?", () => {
                             currentActiveSessionUser = null;
                             portalSwitchOriginEmail = "";
-                            try { sessionStorage.removeItem('physioActiveSessionEmail'); } catch (e) { }
+                            forgetSavedSession();
                             try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
                             document.getElementById('appContainer').classList.add('hidden');
                             // Close the mobile drawer so it never covers the login screen.
@@ -20022,14 +20186,18 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                         });
 
-                        // 5. Render active login layouts and theme configurations
-                        renderAuthViewLayoutBox();
+                        // 5. Restore a live session *before* painting the sign-in screen.
+                        //    The cloud pull is still in flight at this point, so the restore
+                        //    retries briefly instead of flashing/dropping the session.
                         onRosterCycleChange();
                         loadRosterColorDefaults();
-                        applySavedLoginTheme();
                         initLoginPortalConfig();
-                        resumePendingCloudLogin();
-                        resumeSavedSession();
+                        const sessionRestoredAtBoot = beginSessionRestore();
+                        if (!sessionRestoredAtBoot && !physioSessionRestorePending) {
+                            applySavedLoginTheme();
+                            renderAuthViewLayoutBox();
+                            hideSessionBootSplash();
+                        }
 
                         // Init biometric settings
                         const isBiometricEnabled = localStorage.getItem('physioBiometricEnabled') === 'true';

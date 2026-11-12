@@ -109,6 +109,8 @@
   function isSyncKey(key) {    if (!key) return false;
     if (key.indexOf('physioCloud') === 0) return false;       // never sync our own bookkeeping
     if (key.indexOf('physioBiometric') === 0) return false;   // device-specific credential
+    if (key === 'physioSavedSession') return false;           // device-specific session marker
+    if (key === 'physioActiveSessionEmail') return false;     // device-specific session marker
     for (var i = 0; i < SYNC_PREFIXES.length; i++) {
       if (key.indexOf(SYNC_PREFIXES[i]) === 0) return true;
     }
