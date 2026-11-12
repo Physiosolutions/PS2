@@ -16228,6 +16228,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                             if (overlay) overlay.classList.remove('active');
                             document.body.classList.remove('mobile-sidebar-open');
+                            applySavedLoginTheme();
                             renderAuthViewLayoutBox();
                             onRosterCycleChange();
                             loadRosterColorDefaults();
