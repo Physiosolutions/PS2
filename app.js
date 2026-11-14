@@ -5047,7 +5047,7 @@
                         };
                         globalRosterRepository.push(newAdmin);
                         try { localStorage.setItem('physioStaffDirectoryRepository', JSON.stringify(globalRosterRepository)); } catch (e) { }
-                        initializeAuthenticatedSessionContext(newAdmin);
+                        initializeAuthenticatedSessionContext(newAdmin, true);
                     }
 
                     // ===== SESSION RESTORE =====
@@ -5138,7 +5138,7 @@
                         if (!user) return false;
                         try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
                         if (user.password === pending.password && user.active !== false) {
-                            initializeAuthenticatedSessionContext(user);
+                            initializeAuthenticatedSessionContext(user, true);
                             return true;
                         }
                         return false;
@@ -5165,7 +5165,9 @@
                             physioSessionRestoreDefinitiveFailure = true;
                             return false;
                         }
-                        initializeAuthenticatedSessionContext(user);
+                        // A refresh restores the session without a fresh sign-in. Log it
+                        // once, and only if the same user has not logged in recently.
+                        initializeAuthenticatedSessionContext(user, true, { dedupeMinutes: 30 });
                         return true;
                     }
 
@@ -5242,6 +5244,14 @@
                         };
                         const fail = function (message) {
                             setButton(false);
+                            if (identifier) {
+                                const known = findLocalAccount(identifier);
+                                recordLoginAuditEvent('failed', known || { name: identifier, email: identifier, position: '' }, {
+                                    name: known ? known.name : identifier,
+                                    email: known ? known.email : identifier,
+                                    role: known ? known.position : ''
+                                });
+                            }
                             customAlert(message);
                         };
 
@@ -5255,7 +5265,7 @@
                         setTimeout(function () {
                             const matchedUser = findLocalAccount(identifier);
                             if (matchedUser && matchedUser.password === pass) {
-                                initializeAuthenticatedSessionContext(matchedUser);
+                                initializeAuthenticatedSessionContext(matchedUser, true);
                                 return;
                             }
 
@@ -6045,13 +6055,15 @@
                         updateBiometricLoginButtonVisibility();
                     };
 
-                    function initializeAuthenticatedSessionContext(userObject) {
+                    function initializeAuthenticatedSessionContext(userObject, auditLogin, auditDetails) {
                         // Check if user account is active (not disabled/resigned)
                         if (userObject.active === false) {
+                            if (auditLogin) recordLoginAuditEvent('failed', userObject, {});
                             customAlert("Account Access Denied: This user account has been deactivated. Please contact your administrator.");
                             return;
                         }
                         currentActiveSessionUser = userObject;
+                        if (auditLogin) recordLoginAuditEvent('success', userObject, auditDetails || {});
                         portalSwitchOriginEmail = userObject.email;
                         rememberSavedSession(userObject.email);
                         try { if (window.PhysioCloud && window.PhysioCloud.enabled) window.PhysioCloud.onLocalLogin(userObject.email, userObject.password); } catch (e) { }
@@ -6107,23 +6119,29 @@
 
                     function checkAndResetLeaveBalances() {
                         const today = new Date();
+                        today.setHours(0, 0, 0, 0);
                         globalRosterRepository.forEach(staff => {
                             if (!staff.joiningDate) return;
-                            const joinDate = new Date(staff.joiningDate);
-                            const lastReset = staff.lastLeaveReset ? new Date(staff.lastLeaveReset) : null;
-                            if (lastReset && today < new Date(lastReset.getFullYear() + 1, lastReset.getMonth(), lastReset.getDate())) return;
-                            if (!lastReset && today < new Date(joinDate.getFullYear() + 1, joinDate.getMonth(), joinDate.getDate())) return;
-                            const style = staff.style || "Full-Time";
-                            staff.sickBalance = style === "Full-Time" ? 30 : 0;
-                            staff.annualBalance = style === "Full-Time" ? 30 : 0;
-                            staff.familyBalance = style === "Full-Time" ? 15 : 0;
+                            // Renew the balance counters once per joining-anniversary
+                            // leave year, rather than one year after the last reset.
+                            const cycle = getStaffAnniversaryCycleRange(staff.email);
+                            if (!cycle) return;
+                            const cycleStartIso = formatIsoDateLocal(cycle.start);
+                            if (staff.lastLeaveReset === cycleStartIso) return;
+                            const lastReset = parseIsoDateLocal(staff.lastLeaveReset || '');
+                            if (lastReset && lastReset >= cycle.start) return;
+                            const eligibleFrom = getAnnualLeaveEligibilityDate(staff.email);
+                            const annualEligible = !eligibleFrom || today >= eligibleFrom;
+                            staff.sickBalance = 30;
+                            staff.annualBalance = annualEligible ? 30 : 0;
+                            staff.familyBalance = 15;
                             staff.umrahBalance = 15;
                             staff.hajjBalance = 15;
                             staff.noPaidBalance = 15;
                             staff.maternityBalance = 90;
                             staff.paternityBalance = 10;
                             staff.specialBalance = 15;
-                            staff.lastLeaveReset = today.toISOString().slice(0, 10);
+                            staff.lastLeaveReset = cycleStartIso;
                         });
                     }
 
@@ -7119,7 +7137,11 @@
 
                         // Build leave balance rows from dashboard-specific visibility config
                         let leaveRowsHtml = "";
+                        let leaveYearNote = "";
                         if (email) {
+                            const myCycle = getStaffAnniversaryCycleRange(email);
+                            if (myCycle) leaveYearNote = `Leave year ${formatLeaveCycleLabel(myCycle)} · renews on ${formatDateToDDMMYYYY(formatIsoDateLocal(myCycle.end))}`;
+                            const partTimeProfile = isStaffPartTime(email);
                             let dashTypes = [];
                             try {
                                 const saved = localStorage.getItem('physioDashboardLeaveTypes');
@@ -7139,6 +7161,15 @@
                                     limit = getCeilingLimit(type, null);
                                     if (type === 'Family Leave') label = 'Family Resp.';
                                 }
+                                if (type === 'Annual Leave' && !isAnnualLeaveEligible(email)) {
+                                    const eligibleFrom = getAnnualLeaveEligibilityDate(email);
+                                    leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">—</span></td><td><span class="badge badge-dark">0 d</span></td><td><span class="badge badge-warning">From ${formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom))}</span></td></tr>`;
+                                    return;
+                                }
+                                if (partTimeProfile) {
+                                    leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">—</span></td><td><span class="badge badge-info">${used} d</span></td><td><span class="badge badge-success">Unlimited</span></td></tr>`;
+                                    return;
+                                }
                                 const left = Math.max(0, limit - used);
                                 const badgeClass = used === 0 ? 'badge-success' : (used >= limit ? 'badge-danger' : 'badge-warning');
                                 leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">${limit} d</span></td><td><span class="badge ${badgeClass}">${used} d</span></td><td><span class="badge badge-success">${left} d</span></td></tr>`;
@@ -7156,7 +7187,7 @@
             <!-- Leave Balances Card -->
             <div class="module-card" style="border-top: 4px solid var(--primary); padding: 20px; flex:1;">
                 <h3 id="lbl_dash_personal_leaves_title">🌴 Personal Leave Balances</h3>
-                <p style="color:var(--text-muted); font-size:10px; margin-bottom:10px;">Synchronized and verified leave metrics (Read-Only).</p>
+                <p style="color:var(--text-muted); font-size:10px; margin-bottom:10px;">Synchronized and verified leave metrics (Read-Only).${leaveYearNote ? ` <span style="color:var(--primary); font-weight:600;">${leaveYearNote}</span>` : ''}</p>
                 <table class="premium-table" style="margin-top:0;">
                     <thead>
                         <tr>
@@ -8717,10 +8748,79 @@
                         synchronizeWorkspaceCoreStatus();
                     }
 
+                    // ------------------------------------------------------------------
+                    // Authentication audit trail
+                    // The table on the admin hub reads globalLoginLogsRepository, but
+                    // nothing ever wrote to it, so it always looked empty.
+                    // ------------------------------------------------------------------
+                    function describeAuditDevice() {
+                        try {
+                            const ua = navigator.userAgent || '';
+                            const os = /Windows/i.test(ua) ? 'Windows'
+                                : /Android/i.test(ua) ? 'Android'
+                                    : /iPhone|iPad|iPod/i.test(ua) ? 'iOS'
+                                        : /Mac OS X/i.test(ua) ? 'macOS'
+                                            : /Linux/i.test(ua) ? 'Linux' : 'Unknown OS';
+                            const browser = /Edg\//i.test(ua) ? 'Edge'
+                                : /OPR\//i.test(ua) ? 'Opera'
+                                    : /Chrome\//i.test(ua) ? 'Chrome'
+                                        : /Firefox\//i.test(ua) ? 'Firefox'
+                                            : /Safari\//i.test(ua) ? 'Safari' : 'Browser';
+                            return os + ' · ' + browser;
+                        } catch (e) {
+                            return 'Unknown device';
+                        }
+                    }
+
+                    function recordLoginAuditEvent(status, userObject, details) {
+                        try {
+                            const info = details || {};
+                            const user = userObject || {};
+                            const entryEmail = info.email || user.email || info.identifier || '';
+                            if (info.dedupeMinutes) {
+                                const cutoff = Date.now() - info.dedupeMinutes * 60000;
+                                const recent = [...globalLoginLogsRepository].reverse().find(l =>
+                                    l && l.status === status && (l.email || '') === entryEmail
+                                );
+                                if (recent && recent.createdAt) {
+                                    const recentTime = Date.parse(recent.createdAt);
+                                    if (!isNaN(recentTime) && recentTime >= cutoff) return;
+                                }
+                            }
+                            const entry = {
+                                id: (globalLoginLogsRepository.reduce((max, log) => Math.max(max, Number(log && log.id) || 0), 0)) + 1,
+                                name: info.name || user.name || info.identifier || 'Unknown',
+                                email: entryEmail,
+                                role: info.role || user.position || '',
+                                ip: info.ip || '—',
+                                device: describeAuditDevice(),
+                                location: info.location || '—',
+                                timestamp: new Date().toLocaleString('en-GB'),
+                                createdAt: new Date().toISOString(),
+                                status: status || 'success'
+                            };
+                            globalLoginLogsRepository.push(entry);
+                            // Keep the local audit trail bounded.
+                            if (globalLoginLogsRepository.length > 500) {
+                                globalLoginLogsRepository.splice(0, globalLoginLogsRepository.length - 500);
+                            }
+                            try { localStorage.setItem('physioLoginSessionLogs', JSON.stringify(globalLoginLogsRepository)); } catch (e) { }
+                            const tbody = document.getElementById('loginSessionAuditsTableBody');
+                            if (tbody) renderLoginSessionsAuditsTrailTable();
+                        } catch (e) { }
+                    }
+
                     function renderLoginSessionsAuditsTrailTable() {
                         const tbody = document.getElementById('loginSessionAuditsTableBody');
+                        if (!tbody) return;
                         tbody.innerHTML = "";
-                        globalLoginLogsRepository.forEach(log => {
+                        if (globalLoginLogsRepository.length === 0) {
+                            const empty = document.createElement('tr');
+                            empty.innerHTML = `<td colspan="8" style="text-align:center; color:var(--text-muted); font-style:italic; padding:14px;">No authentication events recorded yet. Sign-ins, failed attempts and logouts will appear here.</td>`;
+                            tbody.appendChild(empty);
+                            return;
+                        }
+                        [...globalLoginLogsRepository].reverse().forEach(log => {
                             const isFailed = log.status === 'failed';
                             const isLogout = log.status === 'logout';
                             const statusIcon = isFailed ? '✘' : isLogout ? '●' : '✔';
@@ -8804,6 +8904,7 @@
                     let globalVisibleLeaveTypes = ["Umrah Leave", "Hajj Leave", "No Paid Leave", "Maternity Leave", "Paternity Leave", "Special Leave", "Sick Leave", "Annual Leave", "Family Leave"];
 
                     function getCeilingLimit(type, mcStatus) {
+                        const canonicalType = canonicalLeaveTypeName(type);
                         const defaults = {
                             "Umrah Leave": 15, "Hajj Leave": 15, "No Paid Leave": 15,
                             "Maternity Leave": 90, "Paternity Leave": 10, "Special Leave": 15,
@@ -8813,23 +8914,24 @@
                             const saved = localStorage.getItem('physioLeaveCeilings');
                             if (saved) {
                                 const cfg = JSON.parse(saved);
-                                if (type === 'Sick Leave') {
+                                if (canonicalType === 'Sick Leave') {
                                     if (mcStatus === 'With MC') return cfg['Sick Leave (With MC)'] || 30;
                                     const noMcEl = document.getElementById('withoutMcLimitInput');
                                     const noMcVal = noMcEl ? parseInt(noMcEl.value) || 3 : 3;
                                     if (cfg['Sick Leave (Without MC)'] !== undefined) return cfg['Sick Leave (Without MC)'];
                                     return noMcVal;
                                 }
-                                if (cfg[type] !== undefined) return cfg[type];
-                                return defaults[type] || 30;
+                                if (cfg[canonicalType] !== undefined) return cfg[canonicalType];
+                                if (canonicalType === 'Family Leave' && cfg['Family Responsibility Leave'] !== undefined) return cfg['Family Responsibility Leave'];
+                                return defaults[canonicalType] || 30;
                             }
                         } catch (e) { }
-                        if (type === 'Sick Leave') {
+                        if (canonicalType === 'Sick Leave') {
                             const noMcEl = document.getElementById('withoutMcLimitInput');
                             const noMcVal = noMcEl ? parseInt(noMcEl.value) || 3 : 3;
                             return mcStatus === 'With MC' ? 30 : noMcVal;
                         }
-                        return defaults[type] || 30;
+                        return defaults[canonicalType] || 30;
                     }
 
                     function saveDashboardLeaveVisibility() {
@@ -8959,8 +9061,9 @@
 
                     function getStaffUsedLeaveDaysInCycle(email, type, mcStatus, range) {
                         if (!range) return 0;
+                        const wantedType = canonicalLeaveTypeName(type);
                         let leaves = globalLeaveRepository.filter(l =>
-                            l.email === email && l.type === type && l.status === 'Approved'
+                            l.email === email && canonicalLeaveTypeName(l.type) === wantedType && l.status === 'Approved'
                         );
                         if (mcStatus) {
                             leaves = leaves.filter(l => l.mcStatus === mcStatus);
@@ -8971,13 +9074,85 @@
                         }, 0);
                     }
 
+                    // Different parts of the app historically stored the same leave
+                    // under slightly different labels. Usage counts must not split them.
+                    function canonicalLeaveTypeName(type) {
+                        const value = String(type || '').trim();
+                        if (value === 'Family Responsibility Leave' || value === 'FRL') return 'Family Leave';
+                        if (value === 'No Pay Leave') return 'No Paid Leave';
+                        if (value === 'Sick Leave (With MC)' || value === 'Sick Leave (Without MC)') return 'Sick Leave';
+                        return value;
+                    }
+
                     function getStaffUsedLeaveDays(email, type, mcStatus) {
                         const cycle = getStaffAnniversaryCycleRange(email);
                         if (!cycle) return 0;
                         return getStaffUsedLeaveDaysInCycle(email, type, mcStatus, cycle);
                     }
 
+                    // Which leave year (joining-anniversary cycle) a specific date belongs to.
+                    // This is what lets historical leave be recorded against its own year
+                    // instead of being measured against the current one.
+                    function getStaffLeaveCycleRangeForDate(email, isoDate) {
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return null;
+                        const joining = parseIsoDateLocal(staff.joiningDate || staff.hireDate || '2022-04-21');
+                        const target = parseIsoDateLocal(isoDate);
+                        if (!joining || !target) return null;
+                        let start = new Date(joining.getFullYear(), joining.getMonth(), joining.getDate());
+                        if (target < start) return getLeaveCycleRangeFromStartIso(formatIsoDateLocal(start));
+                        let guard = 0;
+                        while (guard < 120) {
+                            const end = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+                            end.setDate(end.getDate() - 1);
+                            if (target <= end) return { start: new Date(start), end: end };
+                            start = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+                            guard++;
+                        }
+                        return null;
+                    }
+
+                    function getStaffUsedLeaveDaysForDate(email, type, mcStatus, isoDate) {
+                        const range = getStaffLeaveCycleRangeForDate(email, isoDate);
+                        if (!range) return getStaffUsedLeaveDays(email, type, mcStatus);
+                        return getStaffUsedLeaveDaysInCycle(email, type, mcStatus, range);
+                    }
+
+                    function isStaffPartTime(email) {
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return false;
+                        const style = String(staff.style || staff.employmentType || staff.type || '').toLowerCase();
+                        return style.indexOf('part') >= 0;
+                    }
+
+                    // Annual leave starts only after a full year of service, counted
+                    // from the joining date.
+                    function getAnnualLeaveEligibilityDate(email) {
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff) return null;
+                        const joining = parseIsoDateLocal(staff.joiningDate || staff.hireDate || '');
+                        if (!joining) return null;
+                        return new Date(joining.getFullYear() + 1, joining.getMonth(), joining.getDate());
+                    }
+
+                    function isAnnualLeaveEligible(email) {
+                        const eligibleFrom = getAnnualLeaveEligibilityDate(email);
+                        if (!eligibleFrom) return true;
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        return today >= eligibleFrom;
+                    }
+
+                    function isAnnualLeaveEligibleOnDate(email, isoDate) {
+                        const eligibleFrom = getAnnualLeaveEligibilityDate(email);
+                        if (!eligibleFrom) return true;
+                        const target = parseIsoDateLocal(isoDate);
+                        return target ? target >= eligibleFrom : isAnnualLeaveEligible(email);
+                    }
+
                     function isLeaveExhausted(email, type, mcStatus) {
+                        // Part-time profiles are not restricted by the leave ceilings.
+                        if (isStaffPartTime(email)) return false;
                         const used = getStaffUsedLeaveDays(email, type, mcStatus);
                         const limit = getCeilingLimit(type, mcStatus);
                         return used >= limit;
@@ -9032,15 +9207,22 @@
                                 disabled = exhausted;
                                 if (exhausted) label += ' (exhausted)';
                             } else {
-                                exhausted = userEmail ? isLeaveExhausted(userEmail, t, null) : false;
-                                if (exhausted) {
-                                    // A staff member approved for pre-annual leave can still
-                                    // request next leave year's annual leave from here.
-                                    if (t === 'Annual Leave' && isStaffPreAnnualEligible(userEmail)) {
-                                        label += ' (pre-annual available)';
-                                    } else {
-                                        label += ' (exhausted)';
-                                        disabled = true;
+                                if (userEmail && t === 'Annual Leave' && !isAnnualLeaveEligible(userEmail)) {
+                                    const eligibleFrom = getAnnualLeaveEligibilityDate(userEmail);
+                                    label += ' (from ' + formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom)) + ')';
+                                    exhausted = true;
+                                    disabled = false;
+                                } else {
+                                    exhausted = userEmail ? isLeaveExhausted(userEmail, t, null) : false;
+                                    if (exhausted) {
+                                        // A staff member approved for pre-annual leave can still
+                                        // request next leave year's annual leave from here.
+                                        if (t === 'Annual Leave' && isStaffPreAnnualEligible(userEmail)) {
+                                            label += ' (pre-annual available)';
+                                        } else {
+                                            label += ' (exhausted)';
+                                            disabled = true;
+                                        }
                                     }
                                 }
                             }
@@ -14439,10 +14621,30 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const sickNoMcLimit = getCeilingLimit('Sick Leave', 'Without MC');
                             const annualLimit = getCeilingLimit('Annual Leave', null);
                             const familyLimit = getCeilingLimit('Family Leave', null);
-                            appendBalanceCardWidget(anchor, "Sick Leave (With MC)", Math.max(0, sickMcLimit - sickMcUsed), sickMcLimit);
-                            appendBalanceCardWidget(anchor, "Sick Leave (Without MC)", Math.max(0, sickNoMcLimit - sickNoMcUsed), sickNoMcLimit);
-                            appendBalanceCardWidget(anchor, "Annual Leave Limit", Math.max(0, annualLimit - annualUsed), annualLimit);
-                            appendBalanceCardWidget(anchor, "FRL Responsibility", Math.max(0, familyLimit - familyUsed), familyLimit);
+                            const partTimeProfile = isStaffPartTime(email);
+                            const annualEligible = isAnnualLeaveEligible(email);
+                            if (partTimeProfile) {
+                                appendBalanceCardWidget(anchor, "Sick Leave (With MC)", sickMcUsed, '—', 'No cap (part-time)');
+                                appendBalanceCardWidget(anchor, "Sick Leave (Without MC)", sickNoMcUsed, '—', 'No cap (part-time)');
+                                appendBalanceCardWidget(anchor, "Annual Leave", annualUsed, '—', 'No cap (part-time)');
+                                appendBalanceCardWidget(anchor, "FRL Responsibility", familyUsed, '—', 'No cap (part-time)');
+                            } else {
+                                appendBalanceCardWidget(anchor, "Sick Leave (With MC)", Math.max(0, sickMcLimit - sickMcUsed), sickMcLimit);
+                                appendBalanceCardWidget(anchor, "Sick Leave (Without MC)", Math.max(0, sickNoMcLimit - sickNoMcUsed), sickNoMcLimit);
+                                const eligibleFrom = annualEligible ? null : getAnnualLeaveEligibilityDate(email);
+                                appendBalanceCardWidget(
+                                    anchor,
+                                    "Annual Leave",
+                                    annualEligible ? Math.max(0, annualLimit - annualUsed) : 0,
+                                    annualLimit,
+                                    annualEligible ? null : 'From ' + formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom)) + ' (after 1 year)'
+                                );
+                                appendBalanceCardWidget(anchor, "FRL Responsibility", Math.max(0, familyLimit - familyUsed), familyLimit);
+                            }
+                            const myCycle = getStaffAnniversaryCycleRange(email);
+                            if (headerEl && myCycle) {
+                                headerEl.innerText = `📊 Clinical Leave Entitlements Allocation Balance (${currentActiveSessionUser.name}) · ${formatLeaveCycleLabel(myCycle)}`;
+                            }
                         }
 
                         const tbody = document.getElementById('globalLeaveTableAnchor');
@@ -14538,14 +14740,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
                     }
 
-                    function appendBalanceCardWidget(anchor, label, value, ceiling) {
+                    function appendBalanceCardWidget(anchor, label, value, ceiling, note) {
                         const div = document.createElement('div');
                         div.className = "balance-mini-card";
                         div.style.cssText = 'min-height:50px;padding:6px 10px;flex:0 0 auto;min-width:130px;';
                         div.innerHTML = `
                 <h5 style="font-size:8px !important;margin-bottom:2px;">${lookupTranslationValue(label)}</h5>
                 <div class="counter-value" style="font-size:12px; font-weight:700;">${value} Days Left</div>
-                <div style="font-size:7px; color:var(--text-muted); margin-top:1px;">Limit: ${ceiling} Days</div>
+                <div style="font-size:7px; color:var(--text-muted); margin-top:1px;">${note ? note : 'Limit: ' + ceiling + ' Days'}</div>
             `;
                         anchor.appendChild(div);
                     }
@@ -14618,8 +14820,13 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         // Ceiling check. Pre-annual leave skips this year's ceiling and
                         // is instead checked against next leave year's free days.
+                        // Otherwise the check runs against the leave year that the
+                        // requested dates belong to, so historical records count against
+                        // their own year instead of the current one.
                         const email = currentActiveSessionUser?.email;
                         if (email) {
+                            const requestCycle = getStaffLeaveCycleRangeForDate(email, fromDate);
+                            const cycleNote = requestCycle ? ` (leave year ${formatLeaveCycleLabel(requestCycle)})` : '';
                             if (preAnnualRequested && preAnnualCycle) {
                                 const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, preAnnualCycle);
                                 const limitNext = getCeilingLimit('Annual Leave', null);
@@ -14627,19 +14834,25 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                     customAlert(`Pre-annual leave exceeds next leave year (${formatLeaveCycleLabel(preAnnualCycle)}): it already has ${usedNext}d booked of ${limitNext}d, and this request adds ${duration}d.`);
                                     return;
                                 }
+                            } else if (isStaffPartTime(email)) {
+                                // Part-time staff are not capped by the full-time leave ceilings.
+                            } else if (type === 'Annual Leave' && !isAnnualLeaveEligibleOnDate(email, fromDate)) {
+                                const eligibleFrom = getAnnualLeaveEligibilityDate(email);
+                                customAlert(`Annual leave is not available during the first year of service. It becomes available from ${formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom))}.`);
+                                return;
                             } else if (type === 'Sick Leave') {
                                 const mcCheck = mcStatus || 'With MC';
-                                const used = getStaffUsedLeaveDays(email, 'Sick Leave', mcCheck);
+                                const used = getStaffUsedLeaveDaysForDate(email, 'Sick Leave', mcCheck, fromDate);
                                 const limit = getCeilingLimit('Sick Leave', mcCheck);
                                 if (used + duration > limit) {
-                                    customAlert(`${mcCheck} ceiling exceeded: you have used ${used}d of ${limit}d, and this request adds ${duration}d.`);
+                                    customAlert(`${mcCheck} ceiling exceeded${cycleNote}: ${used}d already used of ${limit}d, and this request adds ${duration}d.`);
                                     return;
                                 }
                             } else {
-                                const used = getStaffUsedLeaveDays(email, type, null);
+                                const used = getStaffUsedLeaveDaysForDate(email, type, null, fromDate);
                                 const limit = getCeilingLimit(type, null);
                                 if (used + duration > limit) {
-                                    customAlert(`${type} ceiling exceeded: you have used ${used}d of ${limit}d, and this request adds ${duration}d.`);
+                                    customAlert(`${type} ceiling exceeded${cycleNote}: ${used}d already used of ${limit}d, and this request adds ${duration}d.`);
                                     return;
                                 }
                             }
@@ -14669,8 +14882,13 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         // Deduct balance immediately for auto-approved leaves only.
                         // Pre-annual leave belongs to next leave year and must never
-                        // reduce the current balance.
-                        if (status === "Approved" && !preAnnualRequested) {
+                        // reduce the current balance. Historical leave belongs to a past
+                        // cycle, whose balance is not carried by the profile counters.
+                        const currentCycleForDeduction = currentActiveSessionUser?.email
+                            ? getStaffAnniversaryCycleRange(currentActiveSessionUser.email)
+                            : null;
+                        const leaveIsInCurrentCycle = !currentCycleForDeduction || isIsoDateInRange(fromDate, currentCycleForDeduction);
+                        if (status === "Approved" && !preAnnualRequested && leaveIsInCurrentCycle && !isStaffPartTime(currentActiveSessionUser.email)) {
                             const user = globalRosterRepository.find(u => u.email === currentActiveSessionUser.email);
                             if (user) {
                                 if (type === "Sick Leave") user.sickBalance = Math.max(0, (user.sickBalance || 0) - duration);
@@ -15187,6 +15405,17 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             if (durInput) duration = parseInt(durInput.value) || 1;
                         }
 
+                        // The selected dates decide which leave year is being filled in,
+                        // so previous years can be recorded against their own cycle.
+                        let selectedStart = isRange
+                            ? (document.getElementById('formLeaveDateFrom')?.value || '')
+                            : (document.getElementById('formLeaveDate')?.value || '');
+                        if (!selectedStart) selectedStart = new Date().toISOString().slice(0, 10);
+                        const requestCycle = getStaffLeaveCycleRangeForDate(email, selectedStart);
+                        const cycleNote = requestCycle
+                            ? ` Leave year: <strong>${formatLeaveCycleLabel(requestCycle)}</strong>.`
+                            : '';
+
                         // Pre-annual requests are measured against next leave year.
                         const preAnnualBox = document.getElementById('formPreAnnual');
                         if (preAnnualBox && preAnnualBox.checked && type === 'Annual Leave') {
@@ -15205,23 +15434,36 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             return;
                         }
 
+                        if (isStaffPartTime(email)) {
+                            warnEl.style.display = 'block';
+                            warnEl.innerHTML = `ℹ️ Part-time profile — leave days are not capped by the full-time ceilings.${cycleNote}`;
+                            return;
+                        }
+
+                        if (type === 'Annual Leave' && !isAnnualLeaveEligibleOnDate(email, selectedStart)) {
+                            const eligibleFrom = getAnnualLeaveEligibilityDate(email);
+                            warnEl.style.display = 'block';
+                            warnEl.innerHTML = `⚠️ Annual leave starts after one full year of service — available from <strong>${formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom))}</strong>.`;
+                            return;
+                        }
+
                         let used, limit, label;
                         if (type === 'Sick Leave') {
                             const mcRadio = document.querySelector('input[name="mcStatus"]:checked');
                             const mcStatus = mcRadio ? mcRadio.value : 'With MC';
-                            used = getStaffUsedLeaveDays(email, 'Sick Leave', mcStatus);
+                            used = getStaffUsedLeaveDaysForDate(email, 'Sick Leave', mcStatus, selectedStart);
                             limit = getCeilingLimit('Sick Leave', mcStatus);
                             label = mcStatus;
                         } else {
-                            used = getStaffUsedLeaveDays(email, type, null);
+                            used = getStaffUsedLeaveDaysForDate(email, type, null, selectedStart);
                             limit = getCeilingLimit(type, null);
                             label = type;
                         }
+                        warnEl.style.display = 'block';
                         if (used + duration > limit) {
-                            warnEl.style.display = 'block';
-                            warnEl.innerHTML = `⚠️ ${label} would exceed allocation: ${used}d used of ${limit}d limit, requesting ${duration}d — only ${Math.max(0, limit - used)}d remaining`;
+                            warnEl.innerHTML = `⚠️ ${label} would exceed its allocation${cycleNote} ${used}d used of ${limit}d, requesting ${duration}d — only ${Math.max(0, limit - used)}d remaining.`;
                         } else {
-                            warnEl.style.display = 'none';
+                            warnEl.innerHTML = `ℹ️ ${label}: ${used}d used of ${limit}d, requesting ${duration}d.${cycleNote}`;
                         }
                     }
 
@@ -15382,11 +15624,15 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             if (resolution === "Approved" && !wasAlreadyApproved) {
                                 const user = globalRosterRepository.find(u => u.email === item.email);
                                 // Pre-annual days belong to the next leave year, so they
-                                // must not touch the current annual balance.
-                                if (user && !item.preAnnual) {
-                                    if (item.type === "Sick Leave") user.sickBalance = Math.max(0, (user.sickBalance || 0) - item.duration);
-                                    if (item.type === "Annual Leave") user.annualBalance = Math.max(0, (user.annualBalance || 0) - item.duration);
-                                    if (item.type === "Family Leave") user.familyBalance = Math.max(0, (user.familyBalance || 0) - item.duration);
+                                // must not touch the current annual balance. Historical
+                                // records belong to a past cycle as well.
+                                const itemStart = item.fromDate || item.date;
+                                const itemCycle = item.email ? getStaffLeaveCycleRangeForDate(item.email, itemStart) : null;
+                                const currentCycle = item.email ? getStaffAnniversaryCycleRange(item.email) : null;
+                                const itemIsCurrentCycle = !itemCycle || !currentCycle ||
+                                    formatIsoDateLocal(itemCycle.start) === formatIsoDateLocal(currentCycle.start);
+                                if (user && !item.preAnnual && itemIsCurrentCycle && !isStaffPartTime(item.email)) {
+                                    adjustLeaveBalanceDelta(item.email, item.type, -Math.abs(Number(item.duration) || 0));
                                 }
                                 const fromDate = item.fromDate || item.date;
                                 const toDate = item.toDate || item.date;
@@ -16299,6 +16545,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                     function terminateSession() {
                         customConfirm("Do you wish to exit the current operations session?", () => {
+                            if (currentActiveSessionUser) recordLoginAuditEvent('logout', currentActiveSessionUser, {});
                             currentActiveSessionUser = null;
                             portalSwitchOriginEmail = "";
                             forgetSavedSession();
@@ -17956,12 +18203,41 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     // operational attendance sheets. This keeps legacy labels such as
                     // "Family Leave" from showing up as an extra, uncoloured option
                     // next to "FRL".
+                    // The Attendance Status dropdown follows the "Leave Type Rules
+                    // Allocation Ceiling" panel: leave types the admin unchecks there
+                    // are not offered on the timesheets either. Present/Absent/OFF are
+                    // attendance states, not leave types, so they always stay.
+                    function getVisibleLeaveTypeSet() {
+                        let list = globalVisibleLeaveTypes;
+                        try {
+                            const saved = localStorage.getItem('physioVisibleLeaveTypes');
+                            if (saved) {
+                                const parsed = JSON.parse(saved);
+                                if (Array.isArray(parsed)) list = parsed;
+                            }
+                        } catch (e) { }
+                        return new Set(Array.isArray(list) ? list : []);
+                    }
+
                     function getOtAttendanceOptions() {
-                        return [
-                            "Present", "Absent", "OFF", "Sick Leave", "Annual Leave", "FRL",
-                            "No Paid Leave", "Umrah Leave", "Hajj Leave", "Maternity Leave",
-                            "Paternity Leave", "Special Leave"
+                        const visibleLeaveTypes = getVisibleLeaveTypeSet();
+                        const options = ["Present", "Absent", "OFF"];
+                        const leaveStatusSources = [
+                            { status: "Sick Leave", sources: ["Sick Leave", "Sick Leave (With MC)", "Sick Leave (Without MC)"] },
+                            { status: "Annual Leave", sources: ["Annual Leave"] },
+                            { status: "FRL", sources: ["FRL", "Family Leave", "Family Responsibility Leave"] },
+                            { status: "No Paid Leave", sources: ["No Paid Leave", "No Pay Leave"] },
+                            { status: "Umrah Leave", sources: ["Umrah Leave"] },
+                            { status: "Hajj Leave", sources: ["Hajj Leave"] },
+                            { status: "Maternity Leave", sources: ["Maternity Leave"] },
+                            { status: "Paternity Leave", sources: ["Paternity Leave"] },
+                            { status: "Special Leave", sources: ["Special Leave"] }
                         ];
+                        leaveStatusSources.forEach(entry => {
+                            const enabled = entry.sources.some(src => visibleLeaveTypes.has(src));
+                            if (enabled) options.push(entry.status);
+                        });
+                        return options;
                     }
 
                     function normalizeOtAttendanceStatus(value) {
