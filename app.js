@@ -16624,6 +16624,14 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 return;
                             }
 
+                            // Elements whose text is computed (day counts, live warnings,
+                            // counters) must never be re-translated: this scan runs on
+                            // every DOM insertion and would otherwise overwrite them with
+                            // the text that happened to be there when they were first seen.
+                            if (el.hasAttribute('data-trans-skip')) {
+                                return;
+                            }
+
                             if (el.children.length === 0) {
                                 const rawText = el.innerText.trim();
                                 // Guard: Do not register or scan numbers/dates
