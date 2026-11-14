@@ -9158,6 +9158,26 @@
                         return used >= limit;
                     }
 
+                    // Exhaustion for the leave year that a particular date belongs to.
+                    // Historical entries must look at their own cycle, not today's.
+                    function isLeaveExhaustedOnDate(email, type, mcStatus, isoDate) {
+                        if (isStaffPartTime(email)) return false;
+                        const used = getStaffUsedLeaveDaysForDate(email, type, mcStatus, isoDate);
+                        const limit = getCeilingLimit(type, mcStatus);
+                        return used >= limit;
+                    }
+
+                    // The date the form is currently working with, so the leave type
+                    // list can reflect that leave year rather than the current one.
+                    function getLeaveFormReferenceDateIso() {
+                        const rangeMode = document.getElementById('leaveDateRangeMode');
+                        const isRange = rangeMode && rangeMode.style.display !== 'none';
+                        const iso = isRange
+                            ? (document.getElementById('formLeaveDateFrom')?.value || '')
+                            : (document.getElementById('formLeaveDate')?.value || '');
+                        return iso || formatIsoDateLocal(new Date());
+                    }
+
                     function saveLeaveCeilingLimits() {
                         const types = [
                             { id: "Umrah Leave", show: "lUmrahShow", ceil: "lUmrahCeil" },
@@ -9186,9 +9206,11 @@
                         customAlert("Roster leave rules ceiling values successfully written.");
                     }
 
-                    function populateLeaveTypeDropdown() {
+                    function populateLeaveTypeDropdown(referenceDateIso) {
                         const sel = document.getElementById('formLeaveType');
                         if (!sel) return;
+                        const previousSelection = sel.value;
+                        const referenceDate = referenceDateIso || getLeaveFormReferenceDateIso();
                         try {
                             const saved = localStorage.getItem('physioVisibleLeaveTypes');
                             if (saved) globalVisibleLeaveTypes = JSON.parse(saved);
@@ -9201,19 +9223,19 @@
                         sel.innerHTML = formTypes.map(t => {
                             let exhausted = false, disabled = false, label = t;
                             if (t === 'Sick Leave') {
-                                const mcEx = userEmail ? isLeaveExhausted(userEmail, 'Sick Leave', 'With MC') : false;
-                                const noMcEx = userEmail ? isLeaveExhausted(userEmail, 'Sick Leave', 'Without MC') : false;
+                                const mcEx = userEmail ? isLeaveExhaustedOnDate(userEmail, 'Sick Leave', 'With MC', referenceDate) : false;
+                                const noMcEx = userEmail ? isLeaveExhaustedOnDate(userEmail, 'Sick Leave', 'Without MC', referenceDate) : false;
                                 exhausted = mcEx && noMcEx;
                                 disabled = exhausted;
                                 if (exhausted) label += ' (exhausted)';
                             } else {
-                                if (userEmail && t === 'Annual Leave' && !isAnnualLeaveEligible(userEmail)) {
+                                if (userEmail && t === 'Annual Leave' && !isAnnualLeaveEligibleOnDate(userEmail, referenceDate)) {
                                     const eligibleFrom = getAnnualLeaveEligibilityDate(userEmail);
                                     label += ' (from ' + formatDateToDDMMYYYY(formatIsoDateLocal(eligibleFrom)) + ')';
                                     exhausted = true;
                                     disabled = false;
                                 } else {
-                                    exhausted = userEmail ? isLeaveExhausted(userEmail, t, null) : false;
+                                    exhausted = userEmail ? isLeaveExhaustedOnDate(userEmail, t, null, referenceDate) : false;
                                     if (exhausted) {
                                         // A staff member approved for pre-annual leave can still
                                         // request next leave year's annual leave from here.
@@ -9228,6 +9250,10 @@
                             }
                             return `<option value="${t}" ${disabled ? 'disabled style="color:var(--text-muted);"' : ''}>${label}</option>`;
                         }).join('');
+                        // Keep what the user already picked; only the labels change.
+                        if (previousSelection && [...sel.options].some(o => o.value === previousSelection)) {
+                            sel.value = previousSelection;
+                        }
                     }
 
                     function saveStatusBrandingHexCodes() {
@@ -15240,6 +15266,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             el.addEventListener('change', handleLeaveRangeDateChange);
                         });
                         toggleLeaveDateRangeMode();
+                        populateLeaveTypeDropdown(base);
                     }
 
                     function toggleLeaveDateRangeMode() {
@@ -15259,6 +15286,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             if (fromEl) fromEl.value = baseIso;
                             if (toEl) toEl.value = leaveAddDaysIso(baseIso, duration - 1);
                             calculateLeaveDuration();
+                            populateLeaveTypeDropdown(baseIso);
                             generateLeaveRequestMessage();
                         } else {
                             singleMode.style.display = 'grid';
@@ -15288,6 +15316,17 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 durInput.value = String(Math.max(1, calculateLeaveBusinessDays(from, to)));
                             }
                         }
+                        // The list of available leave types follows the chosen leave year.
+                        populateLeaveTypeDropdown(from || getLeaveFormReferenceDateIso());
+                        generateLeaveRequestMessage();
+                        toggleLeaveMcField();
+                        updateLeaveCeilingWarning();
+                    }
+
+                    // Single-date mode: same refresh, so a historical date is not
+                    // judged against the current leave year.
+                    function handleLeaveSingleDateChange() {
+                        populateLeaveTypeDropdown();
                         generateLeaveRequestMessage();
                         toggleLeaveMcField();
                         updateLeaveCeilingWarning();
@@ -15314,6 +15353,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const durNote = document.getElementById('leaveDurationNote');
                         if (durNote) durNote.innerText = '';
 
+                        populateLeaveTypeDropdown(dateIso);
                         generateLeaveRequestMessage();
                         toggleLeaveMcField();
                         updateLeaveCeilingWarning();
@@ -15474,9 +15514,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (type !== 'Sick Leave') { mcField.style.display = 'none'; return; }
                         mcField.style.display = 'block';
                         const email = currentActiveSessionUser?.email;
+                        const referenceDate = getLeaveFormReferenceDateIso();
 
-                        const usedWithMc = email ? getStaffUsedLeaveDays(email, 'Sick Leave', 'With MC') : 0;
-                        const usedNoMc = email ? getStaffUsedLeaveDays(email, 'Sick Leave', 'Without MC') : 0;
+                        const usedWithMc = email ? getStaffUsedLeaveDaysForDate(email, 'Sick Leave', 'With MC', referenceDate) : 0;
+                        const usedNoMc = email ? getStaffUsedLeaveDaysForDate(email, 'Sick Leave', 'Without MC', referenceDate) : 0;
                         const limitWithMc = getCeilingLimit('Sick Leave', 'With MC');
                         const limitNoMc = getCeilingLimit('Sick Leave', 'Without MC');
                         const consecutiveDays = getCurrentLeaveDuration();
