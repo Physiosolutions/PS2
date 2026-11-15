@@ -164,27 +164,56 @@
                     }
 
                     function formatDateToDDMMYYYY(dateStr) {
-                        if (!dateStr || dateStr === "N/A" || dateStr === "") return "-";
+                        if (dateStr === null || dateStr === undefined || dateStr === '' || dateStr === 'N/A') return "-";
 
-                        // Handle ISO YYYY-MM-DD format (outputs dd/mm/yyyy)
-                        const parts = dateStr.split('-');
-                        if (parts.length === 3) {
-                            const yyyy = parts[0];
-                            const mm = parts[1].padStart(2, '0');
-                            const dd = parts[2].padStart(2, '0');
-                            return `${dd}/${mm}/${yyyy}`;
+                        // Real Date objects (e.g. computed eligibility dates).
+                        if (dateStr instanceof Date) {
+                            if (isNaN(dateStr.getTime())) return "-";
+                            return String(dateStr.getDate()).padStart(2, '0') + '/' +
+                                String(dateStr.getMonth() + 1).padStart(2, '0') + '/' + dateStr.getFullYear();
                         }
 
-                        // Handle M/D/YYYY slash format (outputs dd/mm/yyyy)
-                        const slashParts = dateStr.split('/');
-                        if (slashParts.length === 3) {
-                            const mm = slashParts[0].padStart(2, '0');
-                            const dd = slashParts[1].padStart(2, '0');
-                            const yyyy = slashParts[2].length === 2 ? "20" + slashParts[2] : slashParts[2];
-                            return `${dd}/${mm}/${yyyy}`;
+                        const value = String(dateStr).trim();
+                        if (!value) return "-";
+
+                        // ISO date or full ISO timestamp: 2026-03-18 / 2026-03-18T09:48:00Z
+                        const isoMatch = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+                        if (isoMatch) {
+                            return `${isoMatch[3].padStart(2, '0')}/${isoMatch[2].padStart(2, '0')}/${isoMatch[1]}`;
                         }
 
-                        return dateStr;
+                        // Day/month separated by / . or - (e.g. 14/11/2026, 14-11-26).
+                        // The app standard is dd/mm/yyyy, so only swap when the value
+                        // is unambiguously month-first (14 cannot be a month).
+                        const numericMatch = value.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+                        if (numericMatch) {
+                            const first = parseInt(numericMatch[1], 10);
+                            const second = parseInt(numericMatch[2], 10);
+                            let day = first;
+                            let month = second;
+                            if (first <= 12 && second > 12) { day = second; month = first; }
+                            if (day > 31 || month > 12) return value;
+                            const year = numericMatch[3].length === 2 ? '20' + numericMatch[3] : numericMatch[3];
+                            return String(day).padStart(2, '0') + '/' + String(month).padStart(2, '0') + '/' + year;
+                        }
+
+                        return value;
+                    }
+
+                    // Replace any ISO dates inside free text (notes, comments) so older
+                    // records read dd/mm/yyyy as well.
+                    function formatDatesInText(text) {
+                        if (!text) return text;
+                        return String(text).replace(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g,
+                            (match, y, m, d) => `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`);
+                    }
+
+                    // dd/mm/yyyy, HH:mm — used for timestamps and audit trails.
+                    function formatDateTimeDDMMYYYY(value) {
+                        const d = value instanceof Date ? value : new Date(value);
+                        if (isNaN(d.getTime())) return String(value || '-');
+                        return formatDateToDDMMYYYY(d) + ', ' +
+                            String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
                     }
 
                     function onFollowupMonthChange() {
@@ -3270,7 +3299,7 @@
                             systemAlertLogs.unshift({
                                 text: `Roster for ${cycleMonth} published. Therapists: ${therapistNames} can now view their schedules.`,
                                 tier: 'success',
-                                timestamp: new Date().toLocaleString(),
+                                timestamp: formatDateTimeDDMMYYYY(new Date()),
                                 lifespan: '24 hours',
                                 channel: 'Roster System'
                             });
@@ -7067,7 +7096,7 @@
                         tbody.innerHTML = rows.map(r => `
                 <tr>
                     <td><strong>#C-${String(r.id).padStart(4, '0')}</strong></td>
-                    <td>${r.date}</td>
+                    <td>${formatDateToDDMMYYYY(r.date)}</td>
                     <td>${r.desc}</td>
                 </tr>
             `).join('');
@@ -7138,6 +7167,7 @@
                         // Build leave balance rows from dashboard-specific visibility config
                         let leaveRowsHtml = "";
                         let leaveYearNote = "";
+                        let leavePreAnnualNote = "";
                         if (email) {
                             const myCycle = getStaffAnniversaryCycleRange(email);
                             if (myCycle) leaveYearNote = `Leave year ${formatLeaveCycleLabel(myCycle)} · renews on ${formatDateToDDMMYYYY(formatIsoDateLocal(myCycle.end))}`;
@@ -7174,6 +7204,18 @@
                                 const badgeClass = used === 0 ? 'badge-success' : (used >= limit ? 'badge-danger' : 'badge-warning');
                                 leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">${limit} d</span></td><td><span class="badge ${badgeClass}">${used} d</span></td><td><span class="badge badge-success">${left} d</span></td></tr>`;
                             });
+
+                            // Borrowed (pre-annual) days are charged to the next leave
+                            // year, so show them separately instead of inflating this year.
+                            const nextCycle = getStaffNextLeaveCycleRange(email);
+                            if (nextCycle) {
+                                const borrowed = (globalLeaveRepository || []).filter(l =>
+                                    l.email === email && l.preAnnual && l.status === 'Approved');
+                                if (borrowed.length) {
+                                    const borrowedDays = borrowed.reduce((sum, l) => sum + (Number(l.duration) || 1), 0);
+                                    leavePreAnnualNote = `<div data-trans-skip="1" style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);font-size:9px;color:var(--text-muted);line-height:1.5;">🌴 Pre-annual borrowed: <strong>${borrowedDays} d</strong> taken now and deducted from <strong>${formatLeaveCycleLabel(nextCycle)}</strong>. This year's balances above are unaffected.</div>`;
+                                }
+                            }
                         }
 
                         dashboardContainer.innerHTML = `
@@ -7199,6 +7241,7 @@
                     </thead>
                     <tbody>${leaveRowsHtml}</tbody>
                 </table>
+                ${leavePreAnnualNote}
             </div>
 
         </div>
@@ -8067,7 +8110,7 @@
                         const dayLabel = days[parseInt(dayVal)];
                         const period = freq === 'daily' ? 'Today' : freq === 'weekly' ? 'Past 7 days' : 'Past 30 days';
                         const now = new Date();
-                        const dateStr = now.toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' });
+                        const dateStr = formatDateToDDMMYYYY(now);
                         const stats = buildRealReportStats();
 
                         // Real compliance expiry rows from physioPersonalExpiry
@@ -8087,7 +8130,7 @@
                                         expiryRows = soon.map(d => {
                                             const daysLeft = Math.max(0, Math.ceil((d.exp.getTime() - nowE) / 86400000));
                                             const color = daysLeft <= 15 ? 'var(--danger)' : daysLeft <= 45 ? 'var(--warning)' : 'var(--success)';
-                                            return `<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.name}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.doc}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.cat}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.exp.toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' })}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:${color};">${daysLeft} days</span></td></tr>`;
+                                            return `<tr><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.name}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.doc}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${d.cat}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);">${formatDateToDDMMYYYY(d.exp)}</td><td style="padding:4px 6px; border-bottom:1px solid var(--border);"><span style="color:${color};">${daysLeft} days</span></td></tr>`;
                                         }).join('');
                                     }
                                 }
@@ -8488,11 +8531,11 @@
                             return false;
                         }
                         const stats = buildRealReportStats();
-                        const subject = encodeURIComponent(`Physio Solutions Automated Summary Report — ${new Date().toLocaleDateString('en-MV', { year: 'numeric', month: 'short', day: 'numeric' })}`);
+                        const subject = encodeURIComponent(`Physio Solutions Automated Summary Report — ${formatDateToDDMMYYYY(new Date())}`);
                         const body = encodeURIComponent(
                             "PHYSIO SOLUTIONS — AUTOMATED SUMMARY REPORT\n" +
                             "=============================================\n" +
-                            `Generated: ${new Date().toLocaleString('en-MV')}\n` +
+                            `Generated: ${formatDateTimeDDMMYYYY(new Date())}\n` +
                             `Audit Log Retention Interval: ${getRetentionIntervalSeconds() / 86400} day(s)\n\n` +
                             `Total Staff: ${stats.staffCount}\n` +
                             `Leave Requests: ${stats.leaveRequests}\n` +
@@ -8987,9 +9030,10 @@
                         const staff = globalRosterRepository.find(u => u.email === email);
                         if (!staff) return null;
                         const startStr = staff.joiningDate || staff.hireDate || "2022-04-21";
-                        let start = new Date(startStr);
-                        if (isNaN(start.getTime())) start = new Date("2022-04-21");
+                        let start = parseIsoDateLocal(startStr);
+                        if (!start) start = new Date(2022, 3, 21);
                         const now = new Date();
+                        now.setHours(0, 0, 0, 0);
                         let cycleStart = new Date(start);
                         while (cycleStart <= now) {
                             let next = new Date(cycleStart);
@@ -9068,9 +9112,18 @@
                         if (mcStatus) {
                             leaves = leaves.filter(l => l.mcStatus === mcStatus);
                         }
+                        const rangeStart = formatIsoDateLocal(range.start);
                         return leaves.reduce((sum, l) => {
+                            const duration = Number(l.duration) || 1;
+                            // Pre-annual (borrowed) days belong to the cycle recorded on
+                            // the request, even when the dates themselves fall in the
+                            // current year. This is what lets staff take leave now and
+                            // repay it from the next leave year.
+                            if (l.preAnnual && l.preAnnualCycleStart) {
+                                return l.preAnnualCycleStart === rangeStart ? sum + duration : sum;
+                            }
                             const iso = l.date || l.fromDate;
-                            return isIsoDateInRange(iso, range) ? sum + (Number(l.duration) || 1) : sum;
+                            return isIsoDateInRange(iso, range) ? sum + duration : sum;
                         }, 0);
                     }
 
@@ -9420,7 +9473,7 @@
                              <!-- Quota badge updates -->
                              ${staff.quotaActive ? `
                                  <div class="compliance-badge"><span>Quota Status</span><span class="badge badge-success">Active</span></div>
-                                 <div class="compliance-badge"><span>Quota Expiry</span><span style="font-weight:700; color:${quotaExpState.color}">${staff.quotaExpiry || '-'}</span></div>
+                                 <div class="compliance-badge"><span>Quota Expiry</span><span style="font-weight:700; color:${quotaExpState.color}">${formatDateToDDMMYYYY(staff.quotaExpiry)}</span></div>
                              ` : `
                                  <div class="compliance-badge"><span>Quota Status</span><span style="opacity:0.6;">Inactive</span></div>
                              `}
@@ -11693,14 +11746,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 label = 'Personnel Directory';
                                 if (isExcel) {
                                     let csv = "Employee Name,Corporate Email,Position Profile,Agreement Class,ID Card Expiry,Licence Expiry,Contact Phone\n";
-                                    effectiveStaff.forEach(s => csv += `"${s.name}","${s.email}","${s.position}","${s.style}","${s.idCardExpiry}","${s.healthLicenceExpiry}","${s.phone || ''}"\n`);
+                                    effectiveStaff.forEach(s => csv += `"${s.name}","${s.email}","${s.position}","${s.style}","${formatDateToDDMMYYYY(s.idCardExpiry)}","${formatDateToDDMMYYYY(s.healthLicenceExpiry)}","${s.phone || ''}"\n`);
                                     triggerCSVDownload(`Personnel_Directory_${Date.now()}.csv`, csv);
                                 } else {
-                                    let rows = effectiveStaff.map(s => `<tr><td><strong>${s.name}</strong></td><td>${s.email}</td><td>${s.position}</td><td>${s.style}</td><td>${s.idCardExpiry}</td><td>${s.healthLicenceExpiry}</td></tr>`).join('');
+                                    let rows = effectiveStaff.map(s => `<tr><td><strong>${s.name}</strong></td><td>${s.email}</td><td>${s.position}</td><td>${s.style}</td><td>${formatDateToDDMMYYYY(s.idCardExpiry)}</td><td>${formatDateToDDMMYYYY(s.healthLicenceExpiry)}</td></tr>`).join('');
                                     const logo = globalBrandingLogoUrl ? `<img src="${globalBrandingLogoUrl}" style="max-height:60px; display:block; margin:0 auto 12px;">` : '';
                                     const html = `
                             <div class="report-header">${logo}<p>Personnel Compliance Registry</p></div>
-                            <div class="meta-details"><span><strong>Total Staff:</strong> ${effectiveStaff.length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+                            <div class="meta-details"><span><strong>Total Staff:</strong> ${effectiveStaff.length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
                             <table><thead><tr><th>Employee Name</th><th>Corporate Email</th><th>Position</th><th>Agreement Class</th><th>ID Card Expiry</th><th>Licence Expiry</th></tr></thead><tbody>${rows}</tbody></table>`;
                                     triggerPDFDownload(`Personnel_Directory_${Date.now()}.html`, html);
                                 }
@@ -11773,7 +11826,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                     const logo = globalBrandingLogoUrl ? `<img src="${globalBrandingLogoUrl}" style="max-height:60px; display:block; margin:0 auto 12px;">` : '';
                                     const html = `
                             <div class="report-header">${logo}<p>FDO's Sheets Export</p></div>
-                            <div class="meta-details"><span><strong>Total Rows:</strong> ${fdoSheetData.length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+                            <div class="meta-details"><span><strong>Total Rows:</strong> ${fdoSheetData.length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
                             <table><thead><tr><th>Date</th><th>Aasandha</th><th>New Software</th><th>Difference</th><th>Remarks</th><th>Filled By</th><th>Revised Date</th><th>Revised By</th></tr></thead><tbody>${rows}</tbody></table>`;
                                     triggerPDFDownload(`FDO_Sheets_${Date.now()}.html`, html);
                                 }
@@ -12472,7 +12525,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         broadcastLogs.forEach(log => {
                             const senderName = log.sender || "System Administrator";
-                            const dateStr = log.id ? new Date(log.id).toLocaleString() : log.timestamp;
+                            const dateStr = log.id ? formatDateTimeDDMMYYYY(log.id) : log.timestamp;
                             const badgeClass = log.tier === 'urgent' ? 'badge-danger' : log.tier === 'success' ? 'badge-success' : 'badge-primary';
 
                             const div = document.createElement('div');
@@ -12756,7 +12809,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.fromDate ? fmtDate(l.fromDate) : fmtDate(l.date)}</td>
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.toDate ? fmtDate(l.toDate) : fmtDate(l.date)}</td>
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.submittedAt ? fmtDate(l.submittedAt) : '-'}</td>
-                    <td style="padding:4px 6px; font-size:10px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.note || '-'}</td>
+                    <td style="padding:4px 6px; font-size:10px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${formatDatesInText(l.note) || '-'}</td>
                     <td style="padding:4px 6px; font-size:10px; text-align:center; white-space:nowrap;"><span class="badge ${l.status === 'Approved' ? 'badge-success' : l.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}" style="font-size:8px; padding:2px 5px;">${l.status}</span></td>
                     <td style="padding:4px 6px; font-size:10px; text-align:center; white-space:nowrap;">${l.mcStatus ? `<span style="font-size:9px; font-weight:700; color:${l.mcStatus === 'With MC' ? 'var(--danger)' : 'var(--text-muted)'};">${l.mcStatus}</span>` : '-'}</td>
                     <td style="padding:4px 6px; font-size:10px; text-align:center; white-space:nowrap;">${l.approvedBy || '-'}</td>
@@ -13841,9 +13894,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 <td style="padding:4px 8px;font-weight:600;color:var(--text-muted);font-size:10px;text-align:center;">${i + 1}</td>
                 <td style="padding:4px 8px;"><input type="text" value="${escHtml(r.name)}" onfocus="this.select()" onchange="updateLeaveTrackField('${cat}',${r.id},'name',this.value)" style="width:120px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;"></td>
                 <td style="padding:4px 8px;"><select onchange="updateLeaveTrackField('${cat}',${r.id},'type',this.value)" style="width:110px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);cursor:pointer;">${['', 'Annual Leave', 'FRL', 'Special Leave', 'Sick Leave', 'Maternity', 'Release', 'Others'].map(o => `<option value="${o}" ${o === r.type ? 'selected' : ''}>${o || '\u2014'}</option>`).join('')}</select></td>
-                <td style="padding:4px 8px;"><input type="date" value="${r.dateFrom}" onfocus="this.select()" onchange="updateLeaveTrackField('${cat}',${r.id},'dateFrom',this.value)" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;"></td>
-                <td style="padding:4px 8px;"><input type="date" value="${r.dateTo}" onfocus="this.select()" onchange="updateLeaveTrackField('${cat}',${r.id},'dateTo',this.value)" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;"></td>
-                <td style="padding:4px 8px;"><input type="date" value="${r.dateJoin}" onfocus="this.select()" onchange="updateLeaveTrackField('${cat}',${r.id},'dateJoin',this.value)" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;"></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateFrom_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateFrom)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateFrom}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateFrom',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateFrom',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateTo_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateTo)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateTo}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateTo',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateTo',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateJoin_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateJoin)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateJoin}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateJoin',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateJoin',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
                 <td style="padding:4px 8px;text-align:center;"><button class="action-btn" style="background:var(--danger);padding:2px 6px;font-size:8px;" onclick="deleteLeaveTrackRow('${cat}',${r.id})">✕</button></td>
             </tr>
         `).join('');
@@ -13857,6 +13910,22 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         d.setDate(d.getDate() + 1);
                         while (d.getDay() === 5) d.setDate(d.getDate() + 1);
                         return d.toISOString().slice(0, 10);
+                    }
+
+                    // Keep the readonly dd/mm/yyyy field in sync in the Leave Tracking grid.
+                    function syncLeaveTrackDateDisplay(cat, id, field, iso) {
+                        const el = document.getElementById(`lt${field}_${cat}_${id}_display`);
+                        if (el) el.value = formatDateToDDMMYYYY(iso);
+                    }
+
+                    // Same overlay trick for the leave correction modal.
+                    function syncLeaveModDateDisplays() {
+                        [['leaveModFrom', 'leaveModFromDisplay'], ['leaveModTo', 'leaveModToDisplay']].forEach(pair => {
+                            const input = document.getElementById(pair[0]);
+                            const display = document.getElementById(pair[1]);
+                            if (!input || !display) return;
+                            display.value = input.value ? formatDateToDDMMYYYY(input.value) : '';
+                        });
                     }
 
                     function updateLeaveTrackField(cat, id, field, value) {
@@ -14619,7 +14688,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         let csvContent = "Staff Name,Verified Email,Leave Type,Duration (Days),Leave Date,Verification Notes,Status\n";
 
                         records.forEach(l => {
-                            csvContent += `"${l.employee}","${l.email}","${l.type}",${l.duration},"${l.date}","${l.note}","${l.status}"\n`;
+                            csvContent += `"${l.employee}","${l.email}","${l.type}",${l.duration},"${formatDateToDDMMYYYY(l.date)}","${formatDatesInText(l.note)}","${l.status}"\n`;
                         });
 
                         downloadCSVAsXlsx("leave_consumption_report.csv", csvContent);
@@ -14754,7 +14823,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.fromDate ? formatDateToDDMMYYYY(item.fromDate) : formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.toDate ? formatDateToDDMMYYYY(item.toDate) : formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding: 4px 6px; font-size: 10px; white-space: nowrap;">${item.submittedAt ? formatDateToDDMMYYYY(item.submittedAt.split('T')[0]) : '-'}</td>
-            <td style="padding: 4px 6px; font-size: 10px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.note}</td>
+            <td style="padding: 4px 6px; font-size: 10px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${formatDatesInText(item.note)}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;"><span class="badge ${item.status === 'Approved' ? 'badge-success' : (item.status === 'Rejected' || item.status === 'Cancelled') ? 'badge-danger' : 'badge-warning'}" style="font-size: 8px; padding: 2px 5px;">${item.status}</span></td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.mcStatus ? `<span style="font-size:9px; font-weight:700; color:${item.mcStatus === 'With MC' ? 'var(--danger)' : 'var(--text-muted)'};">${item.mcStatus}</span>` : '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.approvedBy || '-'}</td>
@@ -14819,8 +14888,18 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 customAlert("Your next leave year could not be calculated. Please check your joining date with management.");
                                 return;
                             }
-                            if (!isIsoDateInRange(fromDate, preAnnualCycle) || !isIsoDateInRange(toDate, preAnnualCycle)) {
-                                customAlert(`Pre-annual leave must fall inside your next leave year (${formatLeaveCycleLabel(preAnnualCycle)}).`);
+                            // Pre-annual leave is taken now (current leave year) and
+                            // repaid from the next leave year. It may also be used for
+                            // dates inside the next year, but never beyond it, and never
+                            // for old years that have already closed.
+                            const currentCycle = getStaffAnniversaryCycleRange(staffEmail);
+                            const nextCycleEndIso = formatIsoDateLocal(preAnnualCycle.end);
+                            if (toDate > nextCycleEndIso) {
+                                customAlert(`Pre-annual leave cannot fall after the end of your next leave year (${formatLeaveCycleLabel(preAnnualCycle)}).`);
+                                return;
+                            }
+                            if (currentCycle && fromDate < formatIsoDateLocal(currentCycle.start)) {
+                                customAlert(`Pre-annual leave is for days taken during this leave year or the next one (${formatLeaveCycleLabel(preAnnualCycle)}). Earlier years can be recorded as normal leave.`);
                                 return;
                             }
                         }
@@ -14932,7 +15011,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         // Show appropriate message
                         if (preAnnualRequested) {
                             customAlert("Pre-annual Annual Leave submitted for approval. " + duration +
-                                " day(s) will count against your next leave year (" +
+                                " day(s) will be deducted from your next leave year (" +
                                 formatLeaveCycleLabel(preAnnualCycle) + "), not this year.");
                         } else if (isAutoApproved) {
                             customAlert(type + " request auto-approved! " + duration + " day(s) deducted from your balance.");
@@ -15020,13 +15099,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             rejoinDate = rejoind.getFullYear() + '-' + String(rejoind.getMonth() + 1).padStart(2, '0') + '-' + String(rejoind.getDate()).padStart(2, '0');
                         }
                         const templateForType = globalLeaveMessageTemplates[type] || globalLeaveMessageTemplates["Sick Leave"] || "{type} leave on {date} for {days} days";
+                        // Templates are written by staff, so expose readable dd/mm/yyyy dates.
                         const msg = templateForType
                             .replace(/{type}/g, type)
                             .replace(/{days}/g, days)
-                            .replace(/{rejoinDate}/g, rejoinDate)
-                            .replace(/{date}/g, date || '')
-                            .replace(/{fromDate}/g, fromDate || '')
-                            .replace(/{toDate}/g, toDate || '');
+                            .replace(/{rejoinDate}/g, rejoinDate ? formatDateToDDMMYYYY(rejoinDate) : '')
+                            .replace(/{date}/g, date ? formatDateToDDMMYYYY(date) : '')
+                            .replace(/{fromDate}/g, fromDate ? formatDateToDDMMYYYY(fromDate) : '')
+                            .replace(/{toDate}/g, toDate ? formatDateToDDMMYYYY(toDate) : '');
                         document.getElementById('formLeaveNote').value = msg;
                     }
 
@@ -15267,6 +15347,23 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
                         toggleLeaveDateRangeMode();
                         populateLeaveTypeDropdown(base);
+                        syncLeaveFormDateDisplays();
+                    }
+
+                    // Native date inputs follow the device locale (often mm/dd/yyyy).
+                    // A readonly dd/mm/yyyy field sits on top so every device reads the
+                    // same way; the real input stays underneath to keep the picker.
+                    function syncLeaveFormDateDisplays() {
+                        [
+                            ['formLeaveDate', 'formLeaveDateDisplay'],
+                            ['formLeaveDateFrom', 'formLeaveDateFromDisplay'],
+                            ['formLeaveDateTo', 'formLeaveDateToDisplay']
+                        ].forEach(pair => {
+                            const input = document.getElementById(pair[0]);
+                            const display = document.getElementById(pair[1]);
+                            if (!input || !display) return;
+                            display.value = input.value ? formatDateToDDMMYYYY(input.value) : '';
+                        });
                     }
 
                     function toggleLeaveDateRangeMode() {
@@ -15294,6 +15391,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             durDisplay.style.display = 'none';
                             generateLeaveRequestMessage();
                         }
+                        syncLeaveFormDateDisplays();
                         updateLeaveCeilingWarning();
                     }
 
@@ -15317,6 +15415,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             }
                         }
                         // The list of available leave types follows the chosen leave year.
+                        syncLeaveFormDateDisplays();
                         populateLeaveTypeDropdown(from || getLeaveFormReferenceDateIso());
                         generateLeaveRequestMessage();
                         toggleLeaveMcField();
@@ -15326,6 +15425,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     // Single-date mode: same refresh, so a historical date is not
                     // judged against the current leave year.
                     function handleLeaveSingleDateChange() {
+                        syncLeaveFormDateDisplays();
                         populateLeaveTypeDropdown();
                         generateLeaveRequestMessage();
                         toggleLeaveMcField();
@@ -15354,6 +15454,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (durNote) durNote.innerText = '';
 
                         populateLeaveTypeDropdown(dateIso);
+                        syncLeaveFormDateDisplays();
                         generateLeaveRequestMessage();
                         toggleLeaveMcField();
                         updateLeaveCeilingWarning();
@@ -15378,7 +15479,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                 const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, next);
                                 const limit = getCeilingLimit('Annual Leave', null);
                                 hint.innerHTML = `Next leave year: <strong>${formatLeaveCycleLabel(next)}</strong>. ` +
-                                    `${Math.max(0, limit - usedNext)} of ${limit} day(s) still free there. ` +
+                                    `Days you take now (<strong>${formatLeaveCycleLabel(getStaffAnniversaryCycleRange(email))}</strong>) ` +
+                                    `or during that year are repaid from it, which still has ${Math.max(0, limit - usedNext)} of ${limit} day(s) free. ` +
                                     `This year's annual balance is not affected.`;
                             } else {
                                 hint.textContent = 'Next leave year could not be calculated for this profile.';
@@ -15387,30 +15489,32 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         togglePreAnnualMode();
                     }
 
-                    // Apply / remove the next-leave-year date limits.
+                    // Apply / remove the pre-annual date limits. Borrowed days may be
+                    // taken now (current leave year) or during the next one.
                     function togglePreAnnualMode() {
                         const box = document.getElementById('formPreAnnual');
                         const on = !!(box && box.checked);
-                        const next = on ? getStaffNextLeaveCycleRange(currentActiveSessionUser?.email) : null;
+                        const email = currentActiveSessionUser?.email;
+                        const next = on ? getStaffNextLeaveCycleRange(email) : null;
+                        const current = on ? getStaffAnniversaryCycleRange(email) : null;
                         const fromEl = document.getElementById('formLeaveDateFrom');
                         const toEl = document.getElementById('formLeaveDateTo');
                         const singleEl = document.getElementById('formLeaveDate');
                         [fromEl, toEl, singleEl].forEach(el => {
                             if (!el) return;
-                            if (next) {
-                                el.min = formatIsoDateLocal(next.start);
+                            if (next && current) {
+                                el.min = formatIsoDateLocal(current.start);
+                                el.max = formatIsoDateLocal(next.end);
+                            } else if (next) {
+                                el.removeAttribute('min');
                                 el.max = formatIsoDateLocal(next.end);
                             } else {
                                 el.removeAttribute('min');
                                 el.removeAttribute('max');
                             }
                         });
-                        if (next) {
-                            const startIso = formatIsoDateLocal(next.start);
-                            [fromEl, toEl, singleEl].forEach(el => {
-                                if (el && (!el.value || !isIsoDateInRange(el.value, next))) el.value = startIso;
-                            });
-                        }
+                        // Never move dates the user already picked; only constrain them.
+                        syncLeaveFormDateDisplays();
                         updateLeaveCeilingWarning();
                         generateLeaveRequestMessage();
                     }
@@ -15456,20 +15560,27 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             ? ` Leave year: <strong>${formatLeaveCycleLabel(requestCycle)}</strong>.`
                             : '';
 
-                        // Pre-annual requests are measured against next leave year.
+                        // Pre-annual requests are borrowed from the next leave year:
+                        // the days can be taken now, but they are deducted there.
                         const preAnnualBox = document.getElementById('formPreAnnual');
                         if (preAnnualBox && preAnnualBox.checked && type === 'Annual Leave') {
                             const next = getStaffNextLeaveCycleRange(email);
+                            const current = getStaffAnniversaryCycleRange(email);
                             if (!next) { warnEl.style.display = 'none'; return; }
                             const usedNext = getStaffUsedLeaveDaysInCycle(email, 'Annual Leave', null, next);
                             const limitNext = getCeilingLimit('Annual Leave', null);
                             const freeNext = Math.max(0, limitNext - usedNext);
                             warnEl.style.display = 'block';
                             if (usedNext + duration > limitNext) {
-                                warnEl.innerHTML = `⚠️ Pre-annual exceeds your next leave year allocation: ${usedNext}d already booked of ${limitNext}d, requesting ${duration}d — only ${freeNext}d free.`;
+                                warnEl.innerHTML = `⚠️ Pre-annual exceeds your next leave year allocation: ${usedNext}d already booked of ${limitNext}d there, requesting ${duration}d — only ${freeNext}d free.`;
                             } else {
-                                warnEl.innerHTML = `ℹ️ Pre-annual leave for <strong>${formatLeaveCycleLabel(next)}</strong>. ` +
-                                    `This year's balance stays untouched; ${freeNext}d free next leave year. Management approval is required.`;
+                                const inNextYear = next && next.start && selectedStart >= formatIsoDateLocal(next.start);
+                                const where = inNextYear
+                                    ? `These ${duration} day(s) fall in your next leave year and are deducted from it.`
+                                    : `These ${duration} day(s) are taken now (${current ? formatLeaveCycleLabel(current) : 'this leave year'}) ` +
+                                      `but deducted from your next leave year (${formatLeaveCycleLabel(next)}), not this year.`;
+                                warnEl.innerHTML = `ℹ️ Pre-annual leave: ${where} ` +
+                                    `${freeNext}d of ${limitNext}d free next year. Management approval is required.`;
                             }
                             return;
                         }
@@ -15844,11 +15955,17 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label>Start Date</label>
-                    <input type="date" id="leaveModFrom" ${minAttr} value="${isPendingRequest ? b.from : b.futureStart}">
+                    <div style="position:relative;display:block;height:34px;">
+                        <input type="text" id="leaveModFromDisplay" value="${formatDateToDDMMYYYY(isPendingRequest ? b.from : b.futureStart)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:100%;height:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                        <input type="date" id="leaveModFrom" ${minAttr} value="${isPendingRequest ? b.from : b.futureStart}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;">
+                    </div>
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label>End Date</label>
-                    <input type="date" id="leaveModTo" ${minAttr} value="${b.to}">
+                    <div style="position:relative;display:block;height:34px;">
+                        <input type="text" id="leaveModToDisplay" value="${formatDateToDDMMYYYY(b.to)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:100%;height:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                        <input type="date" id="leaveModTo" ${minAttr} value="${b.to}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;">
+                    </div>
                 </div>
                 ${mcFieldHtml}
                 <div style="font-size:9px; color:var(--text-muted); margin-bottom:10px;">
@@ -15879,11 +15996,15 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (!isPendingRequest && newFrom < b.today) { customAlert("The new start date cannot be in the past."); return; }
                         if (newTo < newFrom) { customAlert("End date cannot be before the start date."); return; }
 
-                        // Pre-annual leave must stay inside its target leave year.
+                        // Pre-annual days may be taken in the current leave year or in
+                        // the year they are borrowed from, but never outside that window.
                         if (item.preAnnual) {
                             const preCycle = getLeaveCycleRangeFromStartIso(item.preAnnualCycleStart) || getStaffNextLeaveCycleRange(item.email);
-                            if (!preCycle || !isIsoDateInRange(newFrom, preCycle) || !isIsoDateInRange(newTo, preCycle)) {
-                                customAlert(`This is pre-annual leave for ${formatLeaveCycleLabel(preCycle)}. The new dates must stay inside that leave year.`);
+                            const currentCycle = getStaffAnniversaryCycleRange(item.email);
+                            const lower = currentCycle ? formatIsoDateLocal(currentCycle.start) : (preCycle ? formatIsoDateLocal(preCycle.start) : '');
+                            const upper = preCycle ? formatIsoDateLocal(preCycle.end) : '';
+                            if (!preCycle || (lower && newFrom < lower) || (upper && newTo > upper)) {
+                                customAlert(`This is pre-annual leave repaid from ${formatLeaveCycleLabel(preCycle)}. New dates must fall between your current leave year and the end of that year.`);
                                 return;
                             }
                         }
@@ -16333,7 +16454,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         </div>
                         <div class="p-field">
                             <label>QUOTA EXPIRY</label>
-                            <div class="p-input"><span class="ico">📋</span><div class="p-value">${user.quotaExpiry || '-'}</div></div>
+                            <div class="p-input"><span class="ico">📋</span><div class="p-value">${formatDateToDDMMYYYY(user.quotaExpiry)}</div></div>
                         </div>
                     `;
                             } else {
@@ -20809,7 +20930,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${item.duration}d</td>
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${formatDateToDDMMYYYY(item.date)}</td>
             <td style="padding:4px 6px;font-size:10px;white-space:nowrap;">${item.submittedAt ? formatDateToDDMMYYYY(item.submittedAt.split('T')[0]) : '-'}</td>
-            <td style="padding:4px 6px;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.note || '-'}</td>
+            <td style="padding:4px 6px;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${formatDatesInText(item.note) || '-'}</td>
             <td style="padding:4px 6px;font-size:10px;text-align:center;white-space:nowrap;"><span class="badge ${item.status === 'Approved' ? 'badge-success' : item.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}" style="font-size:8px;padding:2px 5px;">${item.status}</span></td>
             <td style="padding:4px 6px;font-size:10px;text-align:center;white-space:nowrap;">${item.approvedBy || '-'}</td>
             <td style="padding:4px 6px;font-size:10px;text-align:center;white-space:nowrap;">
@@ -20920,7 +21041,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const clockEl = document.getElementById('dashboardLiveTime');
                         if (clockEl) {
                             const now = new Date();
-                            clockEl.innerText = now.toLocaleString();
+                            clockEl.innerText = now.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + formatDateTimeDDMMYYYY(now);
                         }
                     }
                     // Clock interval is started after DOM is ready (see DOMContentLoaded below)
@@ -20941,7 +21062,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                     function psCloudFormatTime(ts) {
                         if (!ts) return 'never';
-                        try { return new Date(ts).toLocaleString(); } catch (e) { return String(ts); }
+                        try { return formatDateTimeDDMMYYYY(ts); } catch (e) { return String(ts); }
                     }
 
                     function renderCloudStoragePanel() {
@@ -22328,7 +22449,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
         <div class="report-header">
             <p>${title}</p>
         </div>
-        <div class="meta-details">${metaHtml}<span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+        <div class="meta-details">${metaHtml}<span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
         ${tableHtml}
     </div>`;
                             if (typeof html2pdf !== 'undefined') {
@@ -22640,7 +22761,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                 <td>${l.type}</td>
                 <td>${l.duration} Days</td>
                 <td>${formatDateToDDMMYYYY(l.date)}</td>
-                <td>${l.note || '-'}</td>
+                <td>${formatDatesInText(l.note) || '-'}</td>
                 <td><strong>${l.status}</strong></td>
             </tr>
         `;
@@ -22690,7 +22811,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                 <td>${formatDateToDDMMYYYY(l.date)}</td>
                 <td>${l.type}</td>
                 <td>${l.duration} Days</td>
-                <td>${l.note || '-'}</td>
+                <td>${formatDatesInText(l.note) || '-'}</td>
             </tr>
         `;
                         });
@@ -22893,7 +23014,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                     function exportStaffDirectoryToExcel() {
                         let csv = "Employee Name,Corporate Email,Position Profile,Agreement Class,ID Card Expiry,Licence Expiry,Contact Phone\n";
                         globalRosterRepository.forEach(staff => {
-                            csv += `"${staff.name}","${staff.email}","${staff.position}","${staff.style}","${staff.idCardExpiry}","${staff.healthLicenceExpiry}","${staff.phone || ''}"\n`;
+                            csv += `"${staff.name}","${staff.email}","${staff.position}","${staff.style}","${formatDateToDDMMYYYY(staff.idCardExpiry)}","${formatDateToDDMMYYYY(staff.healthLicenceExpiry)}","${staff.phone || ''}"\n`;
                         });
                         triggerCSVDownload(`Personnel_Compliance_Registry_${Date.now()}.csv`, csv);
                     }
@@ -24431,7 +24552,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             targetAudience: targetAudience,
                             sender: currentActiveSessionUser.email,
                             senderName: currentActiveSessionUser.name,
-                            timestamp: new Date().toLocaleString(),
+                            timestamp: formatDateTimeDDMMYYYY(new Date()),
                             timestampMs: Date.now()
                         };
 
@@ -24625,7 +24746,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             targetAudience: recipientEmails,
                             sender: currentActiveSessionUser.email,
                             senderName: '📢 ' + t.name + ' (Manual)',
-                            timestamp: new Date().toLocaleString(),
+                            timestamp: formatDateTimeDDMMYYYY(new Date()),
                             timestampMs: Date.now()
                         };
                         systemAlertLogs.unshift(broadcast);
@@ -24770,7 +24891,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                     targetAudience: recipientEmails,
                                     sender: currentActiveSessionUser.email,
                                     senderName: '🔁 Auto: ' + t.name,
-                                    timestamp: new Date().toLocaleString(),
+                                    timestamp: formatDateTimeDDMMYYYY(new Date()),
                                     timestampMs: Date.now()
                                 };
                                 systemAlertLogs.unshift(broadcast);
@@ -24892,7 +25013,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
 
                         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-                        return date.toLocaleDateString('en-US', options);
+                        return date.toLocaleDateString('en-GB', options);
                     }
 
                     function escapeHtml(text) {
@@ -26153,7 +26274,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const logo = globalBrandingLogoUrl ? `<img src="${globalBrandingLogoUrl}" style="max-height:60px; display:block; margin:0 auto 12px;">` : '';
                         const html = `
         <div class="report-header">${logo}<p>Cash Drawer — ${label}</p></div>
-        <div class="meta-details"><span><strong>Total Rows:</strong> ${cashDrawer1st.filter(r => !_cashDrawerMonth || r.date.startsWith(_cashDrawerMonth)).length + cashDrawer2nd.filter(r => !_cashDrawerMonth || r.date.startsWith(_cashDrawerMonth)).length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+        <div class="meta-details"><span><strong>Total Rows:</strong> ${cashDrawer1st.filter(r => !_cashDrawerMonth || r.date.startsWith(_cashDrawerMonth)).length + cashDrawer2nd.filter(r => !_cashDrawerMonth || r.date.startsWith(_cashDrawerMonth)).length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
         ${tableHTML('1st', '1st Floor')}
         ${tableHTML('2nd', '2nd Floor')}`;
                         triggerPDFDownload(`Cash_Drawer_${label}_${Date.now()}.html`, html);
@@ -26400,7 +26521,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const label = month ? (months[parseInt(month.split('-')[1], 10) - 1] || month) : 'All';
                         const html = `
         <div class="report-header">${logo}<p>Handover — Daily Shift Notes (${label})</p></div>
-        <div class="meta-details"><span><strong>Total Rows:</strong> ${filtered.length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+        <div class="meta-details"><span><strong>Total Rows:</strong> ${filtered.length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
         <table><thead><tr><th>Date</th><th>Time</th><th>Shift</th><th>Staff Name</th><th>Follow Ups</th><th>Floor</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#999;">No entries</td></tr>'}</tbody></table>`;
                         triggerPDFDownload(`Handover_${label.replace(/\s/g, '_')}_${Date.now()}.html`, html);
                     }
@@ -26608,7 +26729,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const label = month ? (months[parseInt(month.split('-')[1], 10) - 1] || month) : 'All';
                         const html = `
         <div class="report-header">${logo}<p>Solarelle Patients (${label})</p></div>
-        <div class="meta-details"><span><strong>Total Rows:</strong> ${filtered.length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+        <div class="meta-details"><span><strong>Total Rows:</strong> ${filtered.length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
         <table><thead><tr><th>#</th><th>Date</th><th>Patient Name</th><th>ID Card</th><th>Solarelle %</th><th>Total Amount</th><th>Amount (Solarelle)</th><th>Amount (Aasandha)</th><th>Amount Paid</th><th>Reference</th></tr></thead><tbody>${rows || '<tr><td colspan="10" style="text-align:center;color:#999;">No entries</td></tr>'}</tbody></table>`;
                         triggerPDFDownload(`Solarelle_Patients_${label.replace(/\s/g, '_')}_${Date.now()}.html`, html);
                     }
@@ -27013,7 +27134,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const logo = globalBrandingLogoUrl ? '<img src="' + globalBrandingLogoUrl + '" style="max-height:60px;display:block;margin:0 auto 12px;">' : '';
                         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
                         const label = month ? (months[parseInt(month.split('-')[1], 10) - 1] || month) : 'All';
-                        const html = '<div class="report-header">' + logo + '<p>Assessment (' + label + ')</p></div><div class="meta-details"><span><strong>Total Rows:</strong> ' + filtered.length + '</span><span><strong>Export Date:</strong> ' + new Date().toLocaleDateString() + '</span></div><table><thead><tr><th>#</th><th>Patient Name</th><th>ID Card</th><th>Consult Date</th><th>Therapist</th><th>Type</th><th>Submitted By</th><th>Done</th><th>Done By</th><th>Done Date</th></tr></thead><tbody>' + (rows || '<tr><td colspan="10" style="text-align:center;color:#999;">No entries</td></tr>') + '</tbody></table>';
+                        const html = '<div class="report-header">' + logo + '<p>Assessment (' + label + ')</p></div><div class="meta-details"><span><strong>Total Rows:</strong> ' + filtered.length + '</span><span><strong>Export Date:</strong> ' + formatDateToDDMMYYYY(new Date()) + '</span></div><table><thead><tr><th>#</th><th>Patient Name</th><th>ID Card</th><th>Consult Date</th><th>Therapist</th><th>Type</th><th>Submitted By</th><th>Done</th><th>Done By</th><th>Done Date</th></tr></thead><tbody>' + (rows || '<tr><td colspan="10" style="text-align:center;color:#999;">No entries</td></tr>') + '</tbody></table>';
                         triggerPDFDownload('Aasandha_Assessment_' + label.replace(/\s/g, '_') + '_' + Date.now() + '.html', html);
                     }
 
@@ -27036,7 +27157,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const logo = globalBrandingLogoUrl ? '<img src="' + globalBrandingLogoUrl + '" style="max-height:60px;display:block;margin:0 auto 12px;">' : '';
                         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
                         const label = month ? (months[parseInt(month.split('-')[1], 10) - 1] || month) : 'All';
-                        const html = '<div class="report-header">' + logo + '<p>Discharge Fill (' + label + ')</p></div><div class="meta-details"><span><strong>Total Rows:</strong> ' + filtered.length + '</span><span><strong>Export Date:</strong> ' + new Date().toLocaleDateString() + '</span></div><table><thead><tr><th>#</th><th>Patient Name</th><th>ID Card</th><th>Discharge Date</th><th>Requested By</th><th>Reason</th><th>Status</th></tr></thead><tbody>' + (rows || '<tr><td colspan="7" style="text-align:center;color:#999;">No entries</td></tr>') + '</tbody></table>';
+                        const html = '<div class="report-header">' + logo + '<p>Discharge Fill (' + label + ')</p></div><div class="meta-details"><span><strong>Total Rows:</strong> ' + filtered.length + '</span><span><strong>Export Date:</strong> ' + formatDateToDDMMYYYY(new Date()) + '</span></div><table><thead><tr><th>#</th><th>Patient Name</th><th>ID Card</th><th>Discharge Date</th><th>Requested By</th><th>Reason</th><th>Status</th></tr></thead><tbody>' + (rows || '<tr><td colspan="7" style="text-align:center;color:#999;">No entries</td></tr>') + '</tbody></table>';
                         triggerPDFDownload('Discharge_Request_' + label.replace(/\s/g, '_') + '_' + Date.now() + '.html', html);
                     }
 
@@ -27446,7 +27567,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         let rows = pricingRefData.map((r, i) => `<tr><td>${i + 1}</td><td>${r.date || ''}</td><td>${escHtml(r.name)}</td><td>${escHtml(r.idCard)}</td><td>${escHtml(r.therapist)}</td><td>${r.price}</td><td>${r.appts}</td><td>${escHtml(r.remarks)}</td><td>${r.ongoing ? 'Yes' : 'No'}</td><td>${r.discharged ? 'Yes' : 'No'}</td><td>${escHtml(r.priceSetBy)}</td><td>${escHtml(r.lastModifiedBy)}</td></tr>`).join('');
                         const html = `
         <div class="report-header">${logo}<p>Patient Pricing Reference</p></div>
-        <div class="meta-details"><span><strong>Total Patients:</strong> ${pricingRefData.length}</span><span><strong>Export Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+        <div class="meta-details"><span><strong>Total Patients:</strong> ${pricingRefData.length}</span><span><strong>Export Date:</strong> ${formatDateToDDMMYYYY(new Date())}</span></div>
         <table><thead><tr><th>#</th><th>Date</th><th>Name</th><th>ID Card No.</th><th>Therapist</th><th>Price</th><th>No. of Appts</th><th>Remarks</th><th>Ongoing</th><th>Discharged</th><th>Price Set By</th><th>Last Modified By</th></tr></thead><tbody>${rows || '<tr><td colspan="12" style="text-align:center;color:#999;">No entries</td></tr>'}</tbody></table>`;
                         triggerPDFDownload(`Pricing_Reference_${Date.now()}.html`, html);
                     }
