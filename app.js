@@ -13894,9 +13894,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 <td style="padding:4px 8px;font-weight:600;color:var(--text-muted);font-size:10px;text-align:center;">${i + 1}</td>
                 <td style="padding:4px 8px;"><input type="text" value="${escHtml(r.name)}" onfocus="this.select()" onchange="updateLeaveTrackField('${cat}',${r.id},'name',this.value)" style="width:120px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;"></td>
                 <td style="padding:4px 8px;"><select onchange="updateLeaveTrackField('${cat}',${r.id},'type',this.value)" style="width:110px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);cursor:pointer;">${['', 'Annual Leave', 'FRL', 'Special Leave', 'Sick Leave', 'Maternity', 'Release', 'Others'].map(o => `<option value="${o}" ${o === r.type ? 'selected' : ''}>${o || '\u2014'}</option>`).join('')}</select></td>
-                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateFrom_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateFrom)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateFrom}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateFrom',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateFrom',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
-                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateTo_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateTo)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateTo}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateTo',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateTo',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
-                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateJoin_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateJoin)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:130px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" value="${r.dateJoin}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateJoin',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateJoin',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;"></div></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateFrom_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateFrom)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('ltdateFrom_${cat}_${r.id}')" style="width:130px;padding:3px 26px 3px 5px; padding-right:26px !important;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" id="ltdateFrom_${cat}_${r.id}" value="${r.dateFrom}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateFrom',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateFrom',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">${dateOverlayTriggerHtml(`ltdateFrom_${cat}_${r.id}`)}</div></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateTo_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateTo)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('ltdateTo_${cat}_${r.id}')" style="width:130px;padding:3px 26px 3px 5px; padding-right:26px !important;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" id="ltdateTo_${cat}_${r.id}" value="${r.dateTo}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateTo',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateTo',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">${dateOverlayTriggerHtml(`ltdateTo_${cat}_${r.id}`)}</div></td>
+                <td style="padding:4px 8px;"><div style="position:relative;display:inline-block;width:130px;"><input type="text" id="ltdateJoin_${cat}_${r.id}_display" value="${formatDateToDDMMYYYY(r.dateJoin)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('ltdateJoin_${cat}_${r.id}')" style="width:130px;padding:3px 26px 3px 5px; padding-right:26px !important;border:1px solid var(--border);border-radius:4px;font-size:10px;background:var(--bg-card);color:var(--text-body);cursor:pointer;"><input type="date" id="ltdateJoin_${cat}_${r.id}" value="${r.dateJoin}" onchange="updateLeaveTrackField('${cat}',${r.id},'dateJoin',this.value);syncLeaveTrackDateDisplay('${cat}',${r.id},'dateJoin',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">${dateOverlayTriggerHtml(`ltdateJoin_${cat}_${r.id}`)}</div></td>
                 <td style="padding:4px 8px;text-align:center;"><button class="action-btn" style="background:var(--danger);padding:2px 6px;font-size:8px;" onclick="deleteLeaveTrackRow('${cat}',${r.id})">✕</button></td>
             </tr>
         `).join('');
@@ -15364,6 +15364,33 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             if (!input || !display) return;
                             display.value = input.value ? formatDateToDDMMYYYY(input.value) : '';
                         });
+                        ['formLeaveDate', 'formLeaveDateFrom', 'formLeaveDateTo'].forEach(ensureDateOverlayTrigger);
+                    }
+
+                    // The dd/mm/yyyy field covers the native input, so the browser's
+                    // own calendar arrow is hidden. This button opens the picker.
+                    function openNativeDatePicker(inputId) {
+                        const el = document.getElementById(inputId);
+                        if (!el) return;
+                        if (typeof el.showPicker === 'function') {
+                            try { el.showPicker(); return; } catch (e) { }
+                        }
+                        el.focus();
+                        el.click();
+                    }
+
+                    function dateOverlayTriggerHtml(inputId) {
+                        return `<span role="button" tabindex="0" data-date-trigger="1" aria-label="Choose date" title="Choose date" onclick="event.stopPropagation();openNativeDatePicker('${inputId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNativeDatePicker('${inputId}');}" style="position:absolute;right:2px;top:50%;margin-top:-13px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);z-index:2;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>`;
+                    }
+
+                    // Add the calendar button to an existing overlay wrapper (used by
+                    // the static leave form, which cannot call the helper above).
+                    function ensureDateOverlayTrigger(inputId) {
+                        const input = document.getElementById(inputId);
+                        if (!input) return;
+                        const wrap = input.parentElement;
+                        if (!wrap || wrap.querySelector('[data-date-trigger="1"]')) return;
+                        wrap.insertAdjacentHTML('beforeend', dateOverlayTriggerHtml(inputId));
                     }
 
                     function toggleLeaveDateRangeMode() {
@@ -15955,16 +15982,18 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label>Start Date</label>
-                    <div style="position:relative;display:block;height:34px;">
-                        <input type="text" id="leaveModFromDisplay" value="${formatDateToDDMMYYYY(isPendingRequest ? b.from : b.futureStart)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:100%;height:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
-                        <input type="date" id="leaveModFrom" ${minAttr} value="${isPendingRequest ? b.from : b.futureStart}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;">
+                    <div style="position:relative;display:block;">
+                        <input type="text" id="leaveModFromDisplay" value="${formatDateToDDMMYYYY(isPendingRequest ? b.from : b.futureStart)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('leaveModFrom')" style="width:100%;height:100%;padding:8px 32px 8px 10px; padding-right:32px !important;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                        <input type="date" id="leaveModFrom" ${minAttr} value="${isPendingRequest ? b.from : b.futureStart}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">
+                        ${dateOverlayTriggerHtml('leaveModFrom')}
                     </div>
                 </div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label>End Date</label>
-                    <div style="position:relative;display:block;height:34px;">
-                        <input type="text" id="leaveModToDisplay" value="${formatDateToDDMMYYYY(b.to)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" style="width:100%;height:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
-                        <input type="date" id="leaveModTo" ${minAttr} value="${b.to}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer;">
+                    <div style="position:relative;display:block;">
+                        <input type="text" id="leaveModToDisplay" value="${formatDateToDDMMYYYY(b.to)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('leaveModTo')" style="width:100%;height:100%;padding:8px 32px 8px 10px; padding-right:32px !important;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                        <input type="date" id="leaveModTo" ${minAttr} value="${b.to}" onchange="syncLeaveModDateDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">
+                        ${dateOverlayTriggerHtml('leaveModTo')}
                     </div>
                 </div>
                 ${mcFieldHtml}

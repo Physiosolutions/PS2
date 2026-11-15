@@ -8211,13 +8211,13 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                         <label id="lbl_target_date_bounds"
                                             style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);"
                                             data-trans-key="Target Date">Target Date</label>
-                                        <div style="position:relative; display:block; margin-top:4px; height:34px;">
+                                        <div style="position:relative; display:block; margin-top:4px;">
                                             <input type="text" id="formLeaveDateDisplay" value="" placeholder="DD/MM/YYYY" readonly
-                                                data-trans-skip="1"
-                                                style="width:100%; height:100%; padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
+                                                data-trans-skip="1" onclick="openNativeDatePicker('formLeaveDate')"
+                                                style="width:100%; height:100%; padding:8px 32px 8px 10px; padding-right:32px !important; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
                                             <input type="date" id="formLeaveDate" value=""
                                                 onchange="handleLeaveSingleDateChange()"
-                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; pointer-events:none;">
                                         </div>
                                     </div>
                                 </div>
@@ -8229,26 +8229,26 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                         <label
                                             style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);"
                                             data-trans-key="From Date">From Date</label>
-                                        <div style="position:relative; display:block; margin-top:4px; height:34px;">
+                                        <div style="position:relative; display:block; margin-top:4px;">
                                             <input type="text" id="formLeaveDateFromDisplay" value="" placeholder="DD/MM/YYYY" readonly
-                                                data-trans-skip="1"
-                                                style="width:100%; height:100%; padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
+                                                data-trans-skip="1" onclick="openNativeDatePicker('formLeaveDateFrom')"
+                                                style="width:100%; height:100%; padding:8px 32px 8px 10px; padding-right:32px !important; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
                                             <input type="date" id="formLeaveDateFrom" value=""
                                                 onchange="handleLeaveRangeDateChange()"
-                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; pointer-events:none;">
                                         </div>
                                     </div>
                                     <div class="form-group" style="margin-bottom: 0;">
                                         <label
                                             style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);"
                                             data-trans-key="To Date">To Date</label>
-                                        <div style="position:relative; display:block; margin-top:4px; height:34px;">
+                                        <div style="position:relative; display:block; margin-top:4px;">
                                             <input type="text" id="formLeaveDateToDisplay" value="" placeholder="DD/MM/YYYY" readonly
-                                                data-trans-skip="1"
-                                                style="width:100%; height:100%; padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
+                                                data-trans-skip="1" onclick="openNativeDatePicker('formLeaveDateTo')"
+                                                style="width:100%; height:100%; padding:8px 32px 8px 10px; padding-right:32px !important; border-radius:6px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); font-family:inherit; font-size:11px; cursor:pointer;">
                                             <input type="date" id="formLeaveDateTo" value=""
                                                 onchange="handleLeaveRangeDateChange()"
-                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+                                                style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; pointer-events:none;">
                                         </div>
                                     </div>
                                 </div>
