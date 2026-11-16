@@ -5609,6 +5609,12 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     HOLIDAY — Public Holiday
                                 </div>
                             </div>
+                            <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+                                <button class="action-btn"
+                                    style="background:var(--bg-card);border:1px solid var(--border);padding:4px 10px;font-size:10px;"
+                                    onclick="openStaffDisplaySettingsModal('full_roster')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
+                            </div>
                             <div class="full-roster-wrapper"
                                 style="border: 1px solid var(--border); border-radius: 8px; background: var(--bg-inner);">
                                 <table id="fullRosterTable"
@@ -5785,6 +5791,10 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                     onclick="exportMasterOTSheetCSV()"
                                     data-trans-key="📥 Export Comprehensive Log (.csv)">📥 Export Comprehensive Log
                                     (.csv)</button>
+                                <button class="action-btn"
+                                    style="background:var(--bg-card);border:1px solid var(--border);"
+                                    onclick="openStaffDisplaySettingsModal('master_ot')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
                             </div>
                         </div>
 
@@ -8758,6 +8768,10 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <button class="action-btn"
                                     style="background:var(--success);padding:4px 10px;font-size:10px;"
                                     onclick="exportSickLeaveMatrix()" data-trans-key="📥 Excel">📥 Excel</button>
+                                <button class="action-btn"
+                                    style="background:var(--bg-card);border:1px solid var(--border);padding:4px 10px;font-size:10px;"
+                                    onclick="openStaffDisplaySettingsModal('sick_matrix')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
                             </div>
                             <div
                                 style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-inner);">
@@ -8801,6 +8815,10 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <button class="action-btn"
                                     style="background:var(--success);padding:4px 10px;font-size:10px;"
                                     onclick="exportFrlMatrix()" data-trans-key="📥 Excel">📥 Excel</button>
+                                <button class="action-btn"
+                                    style="background:var(--bg-card);border:1px solid var(--border);padding:4px 10px;font-size:10px;"
+                                    onclick="openStaffDisplaySettingsModal('frl_matrix')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
                             </div>
                             <div
                                 style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-inner);">
@@ -9077,6 +9095,10 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <span style="font-size: 16px;" data-trans-key="📊">📊</span>
                                 <h3 style="margin-bottom: 0; font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700; color: var(--text-heading);"
                                     data-trans-key="Therapist Volume Entry Grid">Therapist Volume Entry Grid</h3>
+                                <button class="action-btn"
+                                    style="margin-left:auto;background:var(--bg-card);border:1px solid var(--border);padding:4px 10px;font-size:10px;"
+                                    onclick="openStaffDisplaySettingsModal('volume_grid')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
                             </div>
                             <p style="color:var(--text-muted); margin: 0 0 12px 0; font-size: 10px; line-height: 1.4;"
                                 data-trans-key="Log patient volume daily. Rows automatically lock based on staff lifecycle metadata.">

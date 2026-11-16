@@ -3470,15 +3470,17 @@
                         }
 
                         // Build header: DATE | DAYS | Therapist1 | Therapist2 | ... (same style as grid engine)
+                        const fullRosterTable = document.getElementById('fullRosterTable');
+                        if (fullRosterTable) fullRosterTable.setAttribute('data-staff-reorder', 'full_roster');
+                        const fullRosterTherapists = sortStaffByModuleOrder('full_roster', rosterData.therapists);
                         let headHtml = `<tr style="background: var(--primary-light);">
         <th style="padding: 8px 6px; text-align: left; border: 1px solid var(--border); font-weight: 700; color: var(--primary); font-size: 9px; position: sticky; left: 0; z-index: 10; background: var(--primary-light); min-width: 70px;">DATE</th>
         <th style="padding: 8px 6px; text-align: left; border: 1px solid var(--border); font-weight: 700; color: var(--primary); font-size: 9px; position: sticky; left: 70px; z-index: 10; background: var(--primary-light); min-width: 45px;">DAYS</th>`;
-                        rosterData.therapists.forEach(t => {
+                        fullRosterTherapists.forEach(t => {
                             if (!t.name || !t.name.trim()) return;
-                            const firstName = t.name.split(' ')[0];
-                            const lastName = t.name.split(' ').slice(1).join(' ');
+                            const dn = getStaffDisplayNameLines(t.email, 'full_roster', t.name);
                             const bgColor = t.color ? t.color + '22' : 'var(--primary-light)';
-                            headHtml += `<th style="padding: 8px 6px; text-align: center; border: 1px solid var(--border); font-weight: 700; color: var(--primary); font-size: 9px; min-width: 65px; background: ${bgColor};">${escHtml(firstName)}<br><span style="font-size: 8px; opacity: 0.7;">${escHtml(lastName)}</span></th>`;
+                            headHtml += `<th data-staff-email="${escHtml(t.email)}" draggable="true" ondragstart="onStaffReorderDragStart(event,'full_roster','${escHtml(t.email)}')" ondragend="onStaffReorderDragEnd(event)" ondragover="onStaffReorderDragOver(event,'full_roster')" ondrop="onStaffReorderDrop(event,'full_roster','${escHtml(t.email)}')" style="padding: 8px 6px; text-align: center; border: 1px solid var(--border); font-weight: 700; color: var(--primary); font-size: 9px; min-width: 65px; background: ${bgColor}; cursor: grab;" title="Drag to reorder · ${escHtml(t.name)}">${escHtml(dn.line1)}${dn.line2 ? '<br><span style="font-size: 8px; opacity: 0.7;">' + escHtml(dn.line2) + '</span>' : ''}</th>`;
                         });
                         headHtml += `</tr>`;
                         header.innerHTML = headHtml;
@@ -3502,7 +3504,7 @@
             <td style="padding: 6px; border: 1px solid var(--border); font-weight: 700; font-size: 9px; position: sticky; left: 0; background: ${dateBg}; z-index: 5; white-space: nowrap;">${dateStr}</td>
             <td style="padding: 6px; border: 1px solid var(--border); font-weight: 600; font-size: 9px; position: sticky; left: 70px; background: ${dateBg}; z-index: 5;">${dateInfo.dayName}</td>`;
 
-                            rosterData.therapists.forEach(t => {
+                            fullRosterTherapists.forEach(t => {
                                 if (!t.name || !t.name.trim()) return;
                                 const assignment = rosterData.assignments && rosterData.assignments[t.email] ? rosterData.assignments[t.email][dateStr] : null;
                                 const shiftKey = assignment || 'OFF';
@@ -13499,6 +13501,278 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     function getSickMatrixSelectedRoles() {
                         return sickMatrixSelectedRoles || [];
                     }
+
+                    // ===== PER-MODULE DISPLAY NAMES & STAFF ORDER =====
+                    // Every staff member can have a nickname, and each module can show
+                    // Full name, Nickname, or First name only. Staff can also be dragged
+                    // into a custom order per module. Both live in their own synced
+                    // localStorage keys so the cloud roster merge never overwrites them.
+                    const STAFF_DISPLAY_MODULES = [
+                        { key: 'volume_grid', label: '📊 Therapist Volume Entry Grid' },
+                        { key: 'master_ot', label: '💼 Master Overtime & Attendance Log Matrix' },
+                        { key: 'sick_matrix', label: '🤒 Sick Leave Matrix' },
+                        { key: 'frl_matrix', label: '🤱 FRL Matrix' },
+                        { key: 'full_roster', label: '👥 Full Therapists Roster' }
+                    ];
+
+                    function getStaffDisplaySettings() {
+                        try {
+                            const raw = localStorage.getItem('physioStaffDisplaySettings');
+                            if (raw) {
+                                const p = JSON.parse(raw) || {};
+                                return { nicknames: p.nicknames || {}, modules: p.modules || {} };
+                            }
+                        } catch (e) { }
+                        return { nicknames: {}, modules: {} };
+                    }
+
+                    function saveStaffDisplaySettings(settings) {
+                        try {
+                            localStorage.setItem('physioStaffDisplaySettings', JSON.stringify({
+                                nicknames: (settings && settings.nicknames) || {},
+                                modules: (settings && settings.modules) || {}
+                            }));
+                        } catch (e) { }
+                    }
+
+                    function getStaffNickname(email) {
+                        const s = getStaffDisplaySettings();
+                        return String(s.nicknames[String(email || '').toLowerCase()] || '').trim();
+                    }
+
+                    function getModuleNameMode(moduleKey) {
+                        const s = getStaffDisplaySettings();
+                        return s.modules[moduleKey] || 'full';
+                    }
+
+                    // Resolve the name to show for a staff member inside a module.
+                    function getStaffDisplayName(email, moduleKey, fallbackName) {
+                        const staff = (globalRosterRepository || []).find(u => u.email === email);
+                        const full = String(fallbackName || (staff && staff.name) || email || '').trim();
+                        if (!full) return '';
+                        const mode = getModuleNameMode(moduleKey);
+                        if (mode === 'first') return full.split(/\s+/)[0];
+                        if (mode === 'nickname') {
+                            const nick = getStaffNickname(email);
+                            return nick || full.split(/\s+/)[0];
+                        }
+                        return full;
+                    }
+
+                    // Two-line variant (first line + remaining) used by roster headers.
+                    function getStaffDisplayNameLines(email, moduleKey, fallbackName) {
+                        const staff = (globalRosterRepository || []).find(u => u.email === email);
+                        const full = String(fallbackName || (staff && staff.name) || email || '').trim();
+                        const parts = full.split(/\s+/);
+                        const mode = getModuleNameMode(moduleKey);
+                        if (mode === 'first') return { line1: parts[0] || full, line2: '' };
+                        if (mode === 'nickname') {
+                            const nick = getStaffNickname(email);
+                            return { line1: nick || parts[0] || full, line2: '' };
+                        }
+                        return { line1: parts[0] || full, line2: parts.slice(1).join(' ') };
+                    }
+
+                    // ----- Persisted staff order (drag to reorder) -----
+                    function getModuleStaffOrder(moduleKey) {
+                        try {
+                            const raw = localStorage.getItem('physioModuleStaffOrder');
+                            if (raw) {
+                                const all = JSON.parse(raw) || {};
+                                if (Array.isArray(all[moduleKey])) return all[moduleKey];
+                            }
+                        } catch (e) { }
+                        return [];
+                    }
+
+                    function saveModuleStaffOrder(moduleKey, order) {
+                        let all = {};
+                        try {
+                            const raw = localStorage.getItem('physioModuleStaffOrder');
+                            if (raw) all = JSON.parse(raw) || {};
+                        } catch (e) { }
+                        all[moduleKey] = Array.isArray(order) ? order : [];
+                        try { localStorage.setItem('physioModuleStaffOrder', JSON.stringify(all)); } catch (e) { }
+                    }
+
+                    function sortEmailsByModuleOrder(moduleKey, emails) {
+                        const order = getModuleStaffOrder(moduleKey);
+                        if (!order.length) return emails.slice();
+                        const idx = new Map();
+                        order.forEach((e, i) => { if (!idx.has(e)) idx.set(e, i); });
+                        const nameOf = (email) => {
+                            const s = (globalRosterRepository || []).find(u => u.email === email);
+                            return s && s.name ? s.name : String(email);
+                        };
+                        return emails.slice().sort((a, b) => {
+                            const ia = idx.has(a) ? idx.get(a) : Infinity;
+                            const ib = idx.has(b) ? idx.get(b) : Infinity;
+                            if (ia !== ib) return ia - ib;
+                            return nameOf(a).localeCompare(nameOf(b));
+                        });
+                    }
+
+                    function sortStaffByModuleOrder(moduleKey, list) {
+                        const order = getModuleStaffOrder(moduleKey);
+                        if (!order.length) return list.slice();
+                        const idx = new Map();
+                        order.forEach((e, i) => { if (!idx.has(e)) idx.set(e, i); });
+                        return list.slice().sort((a, b) => {
+                            const ia = idx.has(a.email) ? idx.get(a.email) : Infinity;
+                            const ib = idx.has(b.email) ? idx.get(b.email) : Infinity;
+                            if (ia !== ib) return ia - ib;
+                            return String(a.name || '').localeCompare(String(b.name || ''));
+                        });
+                    }
+
+                    // ----- Generic drag-to-reorder (rows or columns) -----
+                    let staffReorderDrag = { module: null, email: null };
+
+                    function onStaffReorderDragStart(ev, moduleKey, email) {
+                        staffReorderDrag = { module: moduleKey, email: email };
+                        try { ev.dataTransfer.effectAllowed = 'move'; } catch (e) { }
+                        try { ev.dataTransfer.setData('text/plain', email); } catch (e) { }
+                        if (ev.currentTarget && ev.currentTarget.style) ev.currentTarget.style.opacity = '0.35';
+                    }
+
+                    function onStaffReorderDragEnd(ev) {
+                        if (ev.currentTarget && ev.currentTarget.style) ev.currentTarget.style.opacity = '';
+                        staffReorderDrag = { module: null, email: null };
+                    }
+
+                    function onStaffReorderDragOver(ev, moduleKey) {
+                        if (staffReorderDrag.module !== moduleKey) return;
+                        ev.preventDefault();
+                        try { ev.dataTransfer.dropEffect = 'move'; } catch (e) { }
+                    }
+
+                    function readStaffVisualOrder(moduleKey) {
+                        const table = document.querySelector('table[data-staff-reorder="' + moduleKey + '"]');
+                        if (!table) return [];
+                        return Array.from(table.querySelectorAll('[data-staff-email]'))
+                            .map(el => el.getAttribute('data-staff-email'))
+                            .filter(Boolean);
+                    }
+
+                    function onStaffReorderDrop(ev, moduleKey, targetEmail) {
+                        if (staffReorderDrag.module !== moduleKey) return;
+                        ev.preventDefault();
+                        const fromEmail = staffReorderDrag.email;
+                        staffReorderDrag = { module: null, email: null };
+                        if (!fromEmail || fromEmail === targetEmail) return;
+                        const order = readStaffVisualOrder(moduleKey);
+                        if (order.indexOf(fromEmail) < 0) order.push(fromEmail);
+                        if (order.indexOf(targetEmail) < 0) return;
+                        const fromIdx = order.indexOf(fromEmail);
+                        order.splice(fromIdx, 1);
+                        const toIdx = order.indexOf(targetEmail);
+                        order.splice(toIdx, 0, fromEmail);
+                        saveModuleStaffOrder(moduleKey, order);
+                        reRenderStaffModule(moduleKey);
+                    }
+
+                    function reRenderStaffModule(moduleKey) {
+                        if (moduleKey === 'volume_grid') { if (typeof renderVolumeEntryGrid === 'function') renderVolumeEntryGrid(); }
+                        else if (moduleKey === 'sick_matrix') { if (typeof renderSickLeaveMatrix === 'function') renderSickLeaveMatrix(); }
+                        else if (moduleKey === 'frl_matrix') { if (typeof renderFrlMatrix === 'function') renderFrlMatrix(); }
+                        else if (moduleKey === 'master_ot') { if (typeof renderMasterOTScheduleMatrix === 'function') renderMasterOTScheduleMatrix(); }
+                        else if (moduleKey === 'full_roster') { if (typeof renderFullTherapistsRoster === 'function') renderFullTherapistsRoster(); }
+                    }
+
+                    function resetModuleStaffOrder(moduleKey) {
+                        saveModuleStaffOrder(moduleKey, []);
+                        reRenderStaffModule(moduleKey);
+                    }
+
+                    // Shared draggable header cell used by the Sick / FRL matrices.
+                    function buildStaffHeaderCell(moduleKey, staff) {
+                        const email = staff.email || staff.name || '';
+                        const dn = getStaffDisplayName(email, moduleKey, staff.name);
+                        return '<th data-staff-email="' + escHtml(email) + '" draggable="true"'
+                            + ' ondragstart="onStaffReorderDragStart(event,\'' + moduleKey + '\',\'' + escHtml(email) + '\')"'
+                            + ' ondragend="onStaffReorderDragEnd(event)"'
+                            + ' ondragover="onStaffReorderDragOver(event,\'' + moduleKey + '\')"'
+                            + ' ondrop="onStaffReorderDrop(event,\'' + moduleKey + '\',\'' + escHtml(email) + '\')"'
+                            + ' style="min-width:70px;text-align:center;cursor:grab;" title="Drag to reorder · ' + escHtml(dn) + '">'
+                            + escHtml(dn) + '</th>';
+                    }
+
+                    function openStaffDisplaySettingsModal(moduleKey) {
+                        const mount = document.getElementById('systemGlobalModalMount');
+                        if (!mount) return;
+                        const settings = getStaffDisplaySettings();
+                        const staffList = (globalRosterRepository || [])
+                            .filter(u => u.name && u.active !== false)
+                            .slice()
+                            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+                        const modeOptions = [
+                            { v: 'full', l: 'Full name' },
+                            { v: 'nickname', l: 'Nickname' },
+                            { v: 'first', l: 'First name only' }
+                        ];
+
+                        let html = '<div class="system-inline-modal-overlay" onclick="if(event.target===this)closeSystemModalBox()" style="cursor:pointer;">';
+                        html += '<div class="system-inline-modal-box" style="width:560px;max-width:94vw;max-height:86vh;overflow-y:auto;cursor:default;" onclick="event.stopPropagation()">';
+                        html += '<h3 style="margin-bottom:4px;font-size:14px;">🎛️ Names &amp; Order</h3>';
+                        html += '<p style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">Give each staff member a nickname, then choose what every module shows. Inside a module, drag the <strong>⋮⋮</strong> handle (or a column header) to reorder staff.</p>';
+
+                        html += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Name shown per module</div>';
+                        html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">';
+                        STAFF_DISPLAY_MODULES.forEach(m => {
+                            const cur = settings.modules[m.key] || 'full';
+                            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-inner);">';
+                            html += '<span style="font-size:11px;font-weight:600;flex:1;">' + m.label + '</span>';
+                            html += '<select class="staffDisplayModuleMode" data-module="' + m.key + '" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-body);font-size:11px;">';
+                            modeOptions.forEach(o => {
+                                html += '<option value="' + o.v + '"' + (cur === o.v ? ' selected' : '') + '>' + o.l + '</option>';
+                            });
+                            html += '</select>';
+                            html += '<button class="action-btn" style="padding:3px 8px;font-size:9px;background:var(--bg-card);border:1px solid var(--border);" onclick="resetModuleStaffOrder(\'' + m.key + '\')" title="Reset this module\'s order to alphabetical">↺</button>';
+                            html += '</div>';
+                        });
+                        html += '</div>';
+
+                        html += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Staff nicknames</div>';
+                        html += '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">';
+                        html += '<div style="display:grid;grid-template-columns:1.2fr 1fr;gap:6px;padding:6px 10px;background:var(--bg-inner);font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text-muted);"><span>Staff</span><span>Nickname / Display name</span></div>';
+                        staffList.forEach(s => {
+                            const nick = settings.nicknames[String(s.email).toLowerCase()] || '';
+                            html += '<div style="display:grid;grid-template-columns:1.2fr 1fr;gap:6px;align-items:center;padding:5px 10px;border-top:1px solid var(--border);">';
+                            html += '<span style="font-size:11px;">' + escHtml(s.name) + '<br><span style="font-size:9px;color:var(--text-muted);">' + escHtml(s.email) + '</span></span>';
+                            html += '<input type="text" class="staffNicknameInput" data-email="' + escHtml(s.email) + '" value="' + escHtml(nick) + '" placeholder="e.g. Shifa" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-body);font-size:11px;width:100%;box-sizing:border-box;">';
+                            html += '</div>';
+                        });
+                        html += '</div>';
+
+                        html += '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">';
+                        html += '<button class="action-btn" style="background:var(--danger);" onclick="closeSystemModalBox()">Cancel</button>';
+                        html += '<button class="action-btn" style="background:var(--primary);" onclick="saveStaffDisplaySettingsFromModal()">Save</button>';
+                        html += '</div></div></div>';
+                        mount.innerHTML = html;
+                    }
+
+                    function saveStaffDisplaySettingsFromModal() {
+                        const nicknames = {};
+                        document.querySelectorAll('#systemGlobalModalMount .staffNicknameInput').forEach(inp => {
+                            const email = String(inp.getAttribute('data-email') || '').toLowerCase();
+                            const val = String(inp.value || '').trim();
+                            if (email && val) nicknames[email] = val;
+                        });
+                        const modules = {};
+                        document.querySelectorAll('#systemGlobalModalMount .staffDisplayModuleMode').forEach(sel => {
+                            const key = sel.getAttribute('data-module');
+                            if (key) modules[key] = sel.value;
+                        });
+                        saveStaffDisplaySettings({ nicknames: nicknames, modules: modules });
+                        closeSystemModalBox();
+                        reRenderStaffModule('volume_grid');
+                        reRenderStaffModule('sick_matrix');
+                        reRenderStaffModule('frl_matrix');
+                        reRenderStaffModule('master_ot');
+                        reRenderStaffModule('full_roster');
+                    }
+
                     function renderSickLeaveMatrix() {
                         populateSickMatrixYearSelect();
                         populateSickMatrixRoleFilter();
@@ -13509,11 +13783,12 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const body = document.getElementById('sickMatrixBody');
                         const foot = document.getElementById('sickMatrixFoot');
                         if (!head || !body || !foot) return;
+                        head.closest('table') && head.closest('table').setAttribute('data-staff-reorder', 'sick_matrix');
                         head.innerHTML = ''; body.innerHTML = ''; foot.innerHTML = '';
 
                         let staffList = globalRosterRepository.filter(u => u.name && u.active !== false);
                         if (selectedRoles.length > 0) staffList = staffList.filter(u => selectedRoles.includes(u.position));
-                        staffList.sort((a, b) => a.name.localeCompare(b.name));
+                        staffList = sortStaffByModuleOrder('sick_matrix', staffList);
 
                         const sickLeaves = (globalLeaveRepository || []).filter(l =>
                             l.type === 'Sick Leave' &&
@@ -13546,7 +13821,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const sortedDates = Object.keys(byDate).sort();
 
                         if (sortedDates.length === 0) {
-                            head.innerHTML = '<tr><th>Date</th><th>Day</th>' + staffList.map(s => '<th>' + escHtml(s.name) + '</th>').join('') + '</tr>';
+                            head.innerHTML = '<tr><th>Date</th><th>Day</th>' + staffList.map(s => buildStaffHeaderCell('sick_matrix', s)).join('') + '</tr>';
                             body.innerHTML = '<tr><td colspan="' + (2 + staffList.length) + '" style="text-align:center;padding:30px;color:var(--text-muted);font-style:italic;">No sick leave records found for ' + year + '.</td></tr>';
                             foot.innerHTML = '';
                             return;
@@ -13554,7 +13829,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         // Header
                         let theadHtml = '<tr><th style="min-width:90px;">Date</th><th style="min-width:40px;">Day</th>';
-                        staffList.forEach(s => { theadHtml += '<th style="min-width:70px;text-align:center;">' + escHtml(s.name.split(' ')[0]) + '</th>'; });
+                        staffList.forEach(s => { theadHtml += buildStaffHeaderCell('sick_matrix', s); });
                         theadHtml += '</tr>';
                         head.innerHTML = theadHtml;
 
@@ -13788,10 +14063,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const body = document.getElementById('frlMatrixBody');
                         const foot = document.getElementById('frlMatrixFoot');
                         if (!head || !body || !foot) return;
+                        head.closest('table') && head.closest('table').setAttribute('data-staff-reorder', 'frl_matrix');
                         head.innerHTML = ''; body.innerHTML = ''; foot.innerHTML = '';
                         let staffList = globalRosterRepository.filter(u => u.name && u.active !== false);
                         if (selectedRoles.length > 0) staffList = staffList.filter(u => selectedRoles.includes(u.position));
-                        staffList.sort((a, b) => a.name.localeCompare(b.name));
+                        staffList = sortStaffByModuleOrder('frl_matrix', staffList);
                         const frlLeaves = (globalLeaveRepository || []).filter(l =>
                             (l.type === 'Family Leave' || l.type === 'Family Responsibility Leave') &&
                             l.status === 'Approved' &&
@@ -13806,13 +14082,13 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
                         const sortedDates = Object.keys(byDate).sort();
                         if (sortedDates.length === 0) {
-                            head.innerHTML = '<tr><th>Date</th><th>Day</th>' + staffList.map(s => '<th>' + escHtml(s.name) + '</th>').join('') + '</tr>';
+                            head.innerHTML = '<tr><th>Date</th><th>Day</th>' + staffList.map(s => buildStaffHeaderCell('frl_matrix', s)).join('') + '</tr>';
                             body.innerHTML = '<tr><td colspan="' + (2 + staffList.length) + '" style="text-align:center;padding:30px;color:var(--text-muted);font-style:italic;">No FRL records found for ' + year + '.</td></tr>';
                             foot.innerHTML = '';
                             return;
                         }
                         let theadHtml = '<tr><th style="min-width:90px;">Date</th><th style="min-width:40px;">Day</th>';
-                        staffList.forEach(s => { theadHtml += '<th style="min-width:70px;text-align:center;">' + escHtml(s.name.split(' ')[0]) + '</th>'; });
+                        staffList.forEach(s => { theadHtml += buildStaffHeaderCell('frl_matrix', s); });
                         theadHtml += '</tr>';
                         head.innerHTML = theadHtml;
                         let bodyHtml = '';
@@ -17467,6 +17743,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         const tbody = document.getElementById('volumeEntryGridBody');
                         const tfoot = document.getElementById('volumeEntryGridFoot');
                         if (!thead || !tbody || !tfoot) return;
+                        thead.closest('table') && thead.closest('table').setAttribute('data-staff-reorder', 'volume_grid');
 
                         tbody.innerHTML = "";
                         thead.innerHTML = "";
@@ -17490,21 +17767,23 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         thead.innerHTML = headRow;
 
                         // 2. Generate input cells dynamically based on schema config
-                        globalRosterRepository.forEach(staff => {
-                            if (staff.active === false) return;
-                            if (stagedActiveStatusChanges && stagedActiveStatusChanges[staff.email] === false) return;
-                            if (!allowedVolumeEntryRoles.includes(staff.position)) return;
-                            if (selectedEmails && !selectedEmails.includes(staff.email)) return;
+                        const gridStaff = sortStaffByModuleOrder('volume_grid', globalRosterRepository.filter(staff => {
+                            if (staff.active === false) return false;
+                            if (stagedActiveStatusChanges && stagedActiveStatusChanges[staff.email] === false) return false;
+                            if (!allowedVolumeEntryRoles.includes(staff.position)) return false;
+                            if (selectedEmails && !selectedEmails.includes(staff.email)) return false;
                             if (staff.lastDayOfWorking) {
                                 const end = new Date(staff.lastDayOfWorking);
                                 // Hide if target date is AFTER the last working day (strictly greater)
-                                if (targetDate > end) return;
+                                if (targetDate > end) return false;
                             }
                             if (staff.joiningDate) {
                                 const start = new Date(staff.joiningDate);
-                                if (targetDate < start) return;
+                                if (targetDate < start) return false;
                             }
-
+                            return true;
+                        }));
+                        gridStaff.forEach(staff => {
                             const isLockedBySend = globalVolumeMasterDatabase.some(e => e.date === targetDateStr && e.finalized);
                             const isDisabled = isLockedBySend;
                             const savedRec = globalVolumeMasterDatabase.find(e => e.date === targetDateStr && e.email === staff.email) || {};
@@ -17518,7 +17797,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             const statusVal = (manualStatus === 'active' && autoOnLeave) ? 'leave' : manualStatus;
                             const inputDisabled = isDisabled || statusVal !== 'active';
 
-                            let rowHtml = `<tr style="${statusVal === 'left' ? 'opacity:0.4;' : statusVal !== 'active' ? 'opacity:0.65;' : ''}">`;
+                            let rowHtml = `<tr data-staff-email="${escHtml(staff.email)}" ondragover="onStaffReorderDragOver(event,'volume_grid')" ondrop="onStaffReorderDrop(event,'volume_grid','${escHtml(staff.email)}')" style="${statusVal === 'left' ? 'opacity:0.4;' : statusVal !== 'active' ? 'opacity:0.65;' : ''}">`;
 
                             activeCols.forEach(col => {
                                 const normKey = col.key.toLowerCase();
@@ -17529,9 +17808,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                                 if (normKey === "name" || normKey === "therapist name") {
                                     const statusMap = { active: '✅ Active', leave: '🚫 On Leave', dayoff: '🌴 Day Off', left: '⚫ Left/Resigned' };
                                     const currentStatus = statusVal;
+                                    const dn = getStaffDisplayName(staff.email, 'volume_grid', staff.name);
                                     rowHtml += `
                     <td style="display:flex; flex-direction:column; gap:2px;">
-                        <strong style="font-size:11px;">${staff.name}</strong>
+                        <span style="display:flex; align-items:center; gap:4px;">
+                            <span draggable="true" ondragstart="onStaffReorderDragStart(event,'volume_grid','${escHtml(staff.email)}')" ondragend="onStaffReorderDragEnd(event)" style="cursor:grab; color:var(--text-muted); font-size:11px; line-height:1; user-select:none;" title="Drag to reorder">⋮⋮</span>
+                            <strong style="font-size:11px;">${escHtml(dn)}</strong>
+                        </span>
                         <select id="volStatus_${staff.email}" onchange="toggleVolStaffStatus('${staff.email}', this.value)" ${isDisabled ? 'disabled' : ''} style="font-size:8px; padding:1px 2px; border-radius:3px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text-body); max-width:110px;">
                             <option value="active" ${currentStatus === 'active' ? 'selected' : ''}>✅ Active</option>
                             <option value="leave" ${currentStatus === 'leave' ? 'selected' : ''}>🚫 On Leave</option>
@@ -19186,7 +19469,19 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         tfoot.innerHTML = "";
 
                         const activeMetric = document.getElementById('masterOtMetricSelector').value;
+                        // Seed the default columns the first time this module is opened,
+                        // otherwise the matrix renders with no therapist columns at all.
+                        if (masterOtDisplayTherapists.length === 0) {
+                            const allowedRoles = getMasterOtAllowedRoles();
+                            globalRosterRepository.forEach(t => {
+                                if (t.active !== false && allowedRoles.includes(t.position)) masterOtDisplayTherapists.push(t.email);
+                            });
+                        }
+                        // Apply the per-module staff order (drag-to-reorder) to the columns.
+                        masterOtDisplayTherapists = sortEmailsByModuleOrder('master_ot', masterOtDisplayTherapists);
                         const activeCount = masterOtDisplayTherapists.length;
+                        const masterOtTable = document.getElementById('masterOtTableElement');
+                        if (masterOtTable) masterOtTable.setAttribute('data-staff-reorder', 'master_ot');
 
                         let hRow1 = `
         <tr>
@@ -19198,7 +19493,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         let hRow2 = `<tr>`;
                         masterOtDisplayTherapists.forEach(email => {
                             const info = globalRosterRepository.find(u => u.email === email);
-                            hRow2 += `<th style="text-align:center;background:var(--primary);color:#fff;">${info ? info.name : email}</th>`;
+                            const dn = getStaffDisplayName(email, 'master_ot', info ? info.name : email);
+                            hRow2 += `<th data-staff-email="${escHtml(email)}" draggable="true" ondragstart="onStaffReorderDragStart(event,'master_ot','${escHtml(email)}')" ondragend="onStaffReorderDragEnd(event)" ondragover="onStaffReorderDragOver(event,'master_ot')" ondrop="onStaffReorderDrop(event,'master_ot','${escHtml(email)}')" style="text-align:center;background:var(--primary);color:#fff;cursor:grab;" title="Drag to reorder · ${escHtml(dn)}">${escHtml(dn)}</th>`;
                         });
                         hRow2 += `</tr>`;
                         thead.innerHTML = hRow1 + hRow2;
