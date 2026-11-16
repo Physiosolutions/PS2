@@ -2039,6 +2039,9 @@
                     function saveDischargeRecords() {
                         try { localStorage.setItem('physioDischargeRecords', JSON.stringify(dischargeRecords)); } catch (e) { }
                     }
+                    // Expose the discharge store to the universal importer.
+                    window.__dischargeStoreGet = function () { return dischargeRecords; };
+                    window.__saveDischargeStore = function () { saveDischargeRecords(); };
                     let globalFollowupCasesRepository = [];
                     let customRegisteredTables = {};
                     let customTableSequences = {};
@@ -2741,6 +2744,22 @@
                             }
                         }
                         return false;
+                    }
+
+                    // True when the staff member has an approved leave record of any
+                    // type covering the given ISO date. Used so grids auto-mark staff
+                    // as "On Leave" straight from their approved leave requests.
+                    function isStaffOnApprovedLeaveOnDate(email, isoDate) {
+                        if (!email || !isoDate) return false;
+                        const target = String(isoDate).slice(0, 10);
+                        if (!target) return false;
+                        return (globalLeaveRepository || []).some(l => {
+                            if (l.email !== email || l.status !== 'Approved') return false;
+                            const from = String(l.fromDate || l.date || '').slice(0, 10);
+                            if (!from) return false;
+                            const to = String(l.toDate || l.date || from).slice(0, 10);
+                            return target >= from && target <= to;
+                        });
                     }
                     function parseDDMMYYYY(str) {
                         if (!str) return "";
@@ -4988,6 +5007,7 @@
                     let dynamicTableBuilderSchemaRows = [];
 
                     let isScanningTranslation = false; // Global lock variable
+                    let translationScanTimer = 0;
 
                     function initializeTranslationObserver() {
                         const observer = new MutationObserver((mutationsList) => {
@@ -4998,9 +5018,14 @@
                                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                                     for (const node of mutation.addedNodes) {
                                         if (node.nodeType === Node.ELEMENT_NODE) {
+                                            // Dropdown options and computed text areas are never
+                                            // translated, so rebuilding them must not start a scan.
+                                            if (node.tagName === 'OPTION') continue;
                                             if (
                                                 node.closest('#fullscreenDictionaryGridAnchor') ||
-                                                node.closest('#systemGlobalModalMount')
+                                                node.closest('#systemGlobalModalMount') ||
+                                                node.closest('[data-trans-skip]') ||
+                                                node.closest('select')
                                             ) {
                                                 continue;
                                             }
@@ -5013,11 +5038,17 @@
                             }
 
                             if (shouldScan) {
+                                // Coalesce bursts of insertions into one scan: the scan
+                                // walks the whole page, so running it per insertion made
+                                // every UI refresh feel sluggish.
                                 isScanningTranslation = true;
-                                observer.disconnect();
-                                autoScanAndRegisterAllLayoutElements();
-                                observer.observe(document.body, { childList: true, subtree: true });
-                                isScanningTranslation = false;
+                                clearTimeout(translationScanTimer);
+                                translationScanTimer = setTimeout(() => {
+                                    observer.disconnect();
+                                    autoScanAndRegisterAllLayoutElements();
+                                    observer.observe(document.body, { childList: true, subtree: true });
+                                    isScanningTranslation = false;
+                                }, 80);
                             }
                         });
 
@@ -7169,9 +7200,13 @@
                         let leaveYearNote = "";
                         let leavePreAnnualNote = "";
                         if (email) {
-                            const myCycle = getStaffAnniversaryCycleRange(email);
-                            if (myCycle) leaveYearNote = `Leave year ${formatLeaveCycleLabel(myCycle)} · renews on ${formatDateToDDMMYYYY(formatIsoDateLocal(myCycle.end))}`;
                             const partTimeProfile = isStaffPartTime(email);
+                            const myCycle = getStaffAnniversaryCycleRange(email);
+                            if (partTimeProfile) {
+                                leaveYearNote = `Part-time · no leave ceiling — "Taken" is the running total of approved days`;
+                            } else if (myCycle) {
+                                leaveYearNote = `Leave year ${formatLeaveCycleLabel(myCycle)} · renews on ${formatDateToDDMMYYYY(formatIsoDateLocal(myCycle.end))}`;
+                            }
                             let dashTypes = [];
                             try {
                                 const saved = localStorage.getItem('physioDashboardLeaveTypes');
@@ -7197,6 +7232,11 @@
                                     return;
                                 }
                                 if (partTimeProfile) {
+                                    // Part-time balances are a running "taken" total,
+                                    // not a cycle balance, so recompute from all records.
+                                    if (type === 'Sick Leave (With MC)') used = getStaffUniqueLeaveDaysAllTime(email, 'Sick Leave', 'With MC');
+                                    else if (type === 'Sick Leave (Without MC)') used = getStaffUniqueLeaveDaysAllTime(email, 'Sick Leave', 'Without MC');
+                                    else used = getStaffUniqueLeaveDaysAllTime(email, type, null);
                                     leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">—</span></td><td><span class="badge badge-info">${used} d</span></td><td><span class="badge badge-success">Unlimited</span></td></tr>`;
                                     return;
                                 }
@@ -9143,6 +9183,37 @@
                         return getStaffUsedLeaveDaysInCycle(email, type, mcStatus, cycle);
                     }
 
+                    // Part-time staff have no ceiling and no yearly renewal, so a
+                    // "balance" measured against a single anniversary cycle is
+                    // meaningless (and shows 0 when their joining date was only
+                    // just recorded). Count every approved day of that type ever,
+                    // de-duplicated across overlapping records so a split request
+                    // is not counted twice.
+                    function getStaffUniqueLeaveDaysAllTime(email, type, mcStatus) {
+                        const wantedType = canonicalLeaveTypeName(type);
+                        const seen = new Set();
+                        (globalLeaveRepository || []).forEach(l => {
+                            if (l.email !== email || l.status !== 'Approved') return;
+                            if (canonicalLeaveTypeName(l.type) !== wantedType) return;
+                            if (mcStatus && l.mcStatus !== mcStatus) return;
+                            const from = l.fromDate || l.date;
+                            if (!from) return;
+                            const to = l.toDate || l.date || from;
+                            const start = parseIsoDateLocal(from);
+                            const end = parseIsoDateLocal(to) || start;
+                            if (!start || !end) return;
+                            const cur = new Date(start);
+                            let guard = 0;
+                            while (cur <= end && guard < 1500) {
+                                const ds = formatIsoDateLocal(cur);
+                                if (cur.getDay() !== 5 && !isPSCalHoliday(ds)) seen.add(ds);
+                                cur.setDate(cur.getDate() + 1);
+                                guard++;
+                            }
+                        });
+                        return seen.size;
+                    }
+
                     // Which leave year (joining-anniversary cycle) a specific date belongs to.
                     // This is what lets historical leave be recorded against its own year
                     // instead of being measured against the current one.
@@ -9273,7 +9344,7 @@
                             if (!formTypes.includes('Sick Leave')) formTypes.push('Sick Leave');
                         }
                         const userEmail = currentActiveSessionUser?.email;
-                        sel.innerHTML = formTypes.map(t => {
+                        const desired = formTypes.map(t => {
                             let exhausted = false, disabled = false, label = t;
                             if (t === 'Sick Leave') {
                                 const mcEx = userEmail ? isLeaveExhaustedOnDate(userEmail, 'Sick Leave', 'With MC', referenceDate) : false;
@@ -9301,8 +9372,25 @@
                                     }
                                 }
                             }
-                            return `<option value="${t}" ${disabled ? 'disabled style="color:var(--text-muted);"' : ''}>${label}</option>`;
-                        }).join('');
+                            return { value: t, label, disabled };
+                        });
+                        // Refresh the existing options in place. Rebuilding the whole
+                        // list on every date change was what made the field feel slow
+                        // and reset the user's current choice.
+                        const existing = Array.from(sel.options);
+                        const sameList = existing.length === desired.length &&
+                            desired.every((d, i) => existing[i].value === d.value);
+                        if (!sameList) {
+                            sel.innerHTML = desired.map(d => `<option value="${d.value}" ${d.disabled ? 'disabled style="color:var(--text-muted);"' : ''}>${d.label}</option>`).join('');
+                        } else {
+                            desired.forEach((d, i) => {
+                                const opt = existing[i];
+                                if (opt.textContent !== d.label) opt.textContent = d.label;
+                                if (opt.disabled !== d.disabled) opt.disabled = d.disabled;
+                                if (d.disabled) opt.setAttribute('style', 'color:var(--text-muted);');
+                                else opt.removeAttribute('style');
+                            });
+                        }
                         // Keep what the user already picked; only the labels change.
                         if (previousSelection && [...sel.options].some(o => o.value === previousSelection)) {
                             sel.value = previousSelection;
@@ -13872,21 +13960,30 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     }
 
                     function renderLeaveTracking() {
+                        updateLeaveTrackShowPastBtn();
+                        const showPast = isLeaveTrackShowPast();
                         LEAVE_TRACKING_CATEGORIES.forEach(cat => {
                             const tbody = document.getElementById(`lt_body_${cat}`);
                             if (!tbody) return;
-                            const data = getLeaveTrackingData()[cat] || [];
+                            const allData = getLeaveTrackingData()[cat] || [];
                             // Always recalculate dateJoin from dateTo (skip Friday)
                             let fixed = false;
-                            data.forEach(r => {
+                            allData.forEach(r => {
                                 if (r.dateTo) {
                                     const calc = calcDateJoin(r.dateTo);
                                     if (calc !== r.dateJoin) { r.dateJoin = calc; fixed = true; }
                                 }
                             });
                             if (fixed) saveLeaveTrackingData();
+                            // Past entries (their last leave date is behind us) are
+                            // hidden so the tracker stays focused on current leave.
+                            const hiddenCount = showPast ? 0 : allData.filter(r => isLeaveTrackRowPast(r)).length;
+                            const data = showPast ? allData : allData.filter(r => !isLeaveTrackRowPast(r));
                             if (data.length === 0) {
-                                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:12px;font-size:10px;color:var(--text-muted);font-style:italic;">No entries. Click "Reset from Staff Data" or "+ Add Row".</td></tr>';
+                                const msg = hiddenCount > 0
+                                    ? `${hiddenCount} past ${hiddenCount === 1 ? 'entry is' : 'entries are'} hidden because the last leave date has passed. Use "👁 Show past" to review them.`
+                                    : 'No entries. Click "Reset from Staff Data" or "+ Add Row".';
+                                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:12px;font-size:10px;color:var(--text-muted);font-style:italic;">${msg}</td></tr>`;
                                 return;
                             }
                             tbody.innerHTML = data.map((r, i) => `
@@ -13910,6 +14007,34 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         d.setDate(d.getDate() + 1);
                         while (d.getDay() === 5) d.setDate(d.getDate() + 1);
                         return d.toISOString().slice(0, 10);
+                    }
+
+                    // A tracking row is "past" once its last recorded date (leave end,
+                    // join date, or leave start) is before today.
+                    function isLeaveTrackRowPast(r) {
+                        const last = r.dateTo || r.dateJoin || r.dateFrom;
+                        if (!last) return false;
+                        return String(last).slice(0, 10) < formatIsoDateLocal(new Date());
+                    }
+
+                    function isLeaveTrackShowPast() {
+                        return localStorage.getItem('physioLeaveTrackShowPast') === '1';
+                    }
+
+                    function updateLeaveTrackShowPastBtn() {
+                        const btn = document.getElementById('leaveTrackShowPastBtn');
+                        if (!btn) return;
+                        const on = isLeaveTrackShowPast();
+                        btn.textContent = on ? '🙈 Hide past' : '👁 Show past';
+                        btn.style.background = on ? 'var(--primary)' : 'var(--bg-card)';
+                        btn.style.color = on ? '#fff' : 'var(--text-body)';
+                    }
+
+                    function toggleLeaveTrackShowPast() {
+                        const next = !isLeaveTrackShowPast();
+                        localStorage.setItem('physioLeaveTrackShowPast', next ? '1' : '0');
+                        updateLeaveTrackShowPastBtn();
+                        renderLeaveTracking();
                     }
 
                     // Keep the readonly dd/mm/yyyy field in sync in the Leave Tracking grid.
@@ -17384,7 +17509,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             const isDisabled = isLockedBySend;
                             const savedRec = globalVolumeMasterDatabase.find(e => e.date === targetDateStr && e.email === staff.email) || {};
                             const draftRec = drafts[staff.email] || {};
-                            const statusVal = savedRec._status || draftRec._status || 'active';
+                            const manualStatus = savedRec._status || draftRec._status || 'active';
+                            // Auto-generate the status from the therapist's approved leave
+                            // requests: a plain "active" (default) is upgraded to "On Leave"
+                            // when a leave record covers this date. Explicit non-active
+                            // choices (Day Off / Left) made by a manager are kept.
+                            const autoOnLeave = isStaffOnApprovedLeaveOnDate(staff.email, targetDateStr);
+                            const statusVal = (manualStatus === 'active' && autoOnLeave) ? 'leave' : manualStatus;
                             const inputDisabled = isDisabled || statusVal !== 'active';
 
                             let rowHtml = `<tr style="${statusVal === 'left' ? 'opacity:0.4;' : statusVal !== 'active' ? 'opacity:0.65;' : ''}">`;
@@ -17397,7 +17528,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                                 if (normKey === "name" || normKey === "therapist name") {
                                     const statusMap = { active: '✅ Active', leave: '🚫 On Leave', dayoff: '🌴 Day Off', left: '⚫ Left/Resigned' };
-                                    const currentStatus = savedRec._status || draftRec._status || 'active';
+                                    const currentStatus = statusVal;
                                     rowHtml += `
                     <td style="display:flex; flex-direction:column; gap:2px;">
                         <strong style="font-size:11px;">${staff.name}</strong>
@@ -17478,6 +17609,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
 
                     function toggleVolStaffStatus(email, status) {
                         const targetDateStr = document.getElementById('volumeTargetDate').value;
+                        // Approved leave always wins over "Active" so the grid cannot
+                        // drift out of sync with the leave records.
+                        if (status === 'active' && isStaffOnApprovedLeaveOnDate(email, targetDateStr)) {
+                            status = 'leave';
+                            const sel = document.getElementById(`volStatus_${email}`);
+                            if (sel) sel.value = 'leave';
+                        }
                         if (!localVolumeDrafts[targetDateStr]) localVolumeDrafts[targetDateStr] = {};
                         if (!localVolumeDrafts[targetDateStr][email]) localVolumeDrafts[targetDateStr][email] = {};
                         localVolumeDrafts[targetDateStr][email]._status = status;

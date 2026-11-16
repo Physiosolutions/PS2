@@ -197,6 +197,27 @@
                 ["Sara", "sara@physio.mv", "Annual Leave", "5", "2026-03-05", "2026-03-10", "2026-03-14", "No", "Approved", "Family vacation trip"]
             ]
         },
+        discharge_summary: {
+            name: "Discharge Summary Sheet (Master Log)",
+            icon: "📋",
+            description: "Discharged patient archive: numbers, therapist, treatment dates, sessions, diagnosis and notes.",
+            primaryKeyDesc: "Matched by Discharge Number, or Patient Name + End Date",
+            fields: [
+                { key: "number", label: "Number", type: "string", required: false, aliases: ["number", "no", "ref", "discharge no", "discharge number", "id no"] },
+                { key: "name", label: "Patient Name", type: "string", required: true, aliases: ["name", "patient name", "full name", "client name"] },
+                { key: "idCard", label: "ID Card", type: "string", required: false, aliases: ["id card", "id", "national id", "nid", "id number"] },
+                { key: "therapistName", label: "Discharged By / Therapist", type: "string", required: false, aliases: ["discharged by", "therapist", "therapist name", "discharged by / therapist", "staff", "physio"] },
+                { key: "startDate", label: "Start Date", type: "date", required: false, aliases: ["start date", "from date", "start", "admission date"] },
+                { key: "endDate", label: "End Date", type: "date", required: true, aliases: ["end date", "to date", "discharge date", "end", "completed date"] },
+                { key: "sessions", label: "Number of Sessions", type: "number", required: false, aliases: ["sessions", "number of sessions", "no of sessions", "total sessions", "session count"] },
+                { key: "diagnosis", label: "Diagnosis", type: "string", required: false, aliases: ["diagnosis", "condition", "chief complaint"] },
+                { key: "notes", label: "Notes", type: "string", required: false, aliases: ["notes", "remarks", "comments", "summary"] }
+            ],
+            sampleRows: [
+                ["DS-0001", "Aishath Moosa", "A098765", "Dr. Hassan Latheef", "2026-01-10", "2026-02-28", "12", "Cervical Spondylosis", "Completed plan, home exercises advised"],
+                ["DS-0002", "Ibrahim Rasheed", "A123456", "Dr. Sara", "2026-02-01", "2026-03-15", "8", "Lumbar Disc Herniation", "Discharged with improvement"]
+            ]
+        },
         sequential_id: {
             name: "Document Reference Generator",
             icon: "🔢",
@@ -1078,6 +1099,70 @@
             }
 
             return { updated, added, createdStaff: createdStaff, total: store.length };
+        },
+
+        discharge_summary: function (rows, mode) {
+            let updated = 0, added = 0;
+            const store = (typeof window.__dischargeStoreGet === 'function')
+                ? window.__dischargeStoreGet()
+                : (window.dischargeRecords = Array.isArray(window.dischargeRecords) ? window.dischargeRecords : []);
+
+            if (mode === "replace") {
+                store.length = 0;
+            }
+
+            rows.forEach(item => {
+                const name = String(item.name || '').trim();
+                const endDate = normalizeDate(item.endDate) || normalizeDate(item.startDate);
+                if (!name || !endDate) return;
+
+                const number = String(item.number || '').trim();
+                const idCard = String(item.idCard || '').trim();
+
+                let existing = null;
+                if (mode === "merge") {
+                    existing = store.find(r => {
+                        if (number && r.number && String(r.number).toLowerCase() === number.toLowerCase()) return true;
+                        return normalizeName(r.name) === normalizeName(name) && String(r.endDate || '') === endDate;
+                    });
+                }
+
+                const payload = {
+                    number: number || (existing ? existing.number : ''),
+                    name: name,
+                    idCard: idCard || (existing ? existing.idCard : ''),
+                    therapistName: String(item.therapistName || (existing ? existing.therapistName : '') || '').trim(),
+                    startDate: normalizeDate(item.startDate) || (existing ? existing.startDate : ''),
+                    endDate: endDate,
+                    sessions: parseInt(item.sessions, 10) || (existing ? existing.sessions : 0) || 0,
+                    diagnosis: String(item.diagnosis || (existing ? existing.diagnosis : '') || '').trim(),
+                    notes: String(item.notes || (existing ? existing.notes : '') || '').trim()
+                };
+
+                if (existing) {
+                    Object.assign(existing, payload);
+                    updated++;
+                } else {
+                    store.push(Object.assign({
+                        id: Date.now() + Math.floor(Math.random() * 1000),
+                        dischargedBy: (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser ? currentActiveSessionUser.name : 'Importer'),
+                        dischargedByEmail: (typeof currentActiveSessionUser !== 'undefined' && currentActiveSessionUser ? currentActiveSessionUser.email : '')
+                    }, payload));
+                    added++;
+                }
+            });
+
+            if (typeof window.__saveDischargeStore === 'function') {
+                window.__saveDischargeStore();
+            } else {
+                try { localStorage.setItem('physioDischargeRecords', JSON.stringify(store)); } catch (e) { }
+            }
+
+            if (typeof renderDischargeSummaryTable === 'function') renderDischargeSummaryTable();
+            if (typeof renderDischargeRecordsTable === 'function') renderDischargeRecordsTable();
+            if (typeof synchronizeWorkspaceCoreStatus === 'function') synchronizeWorkspaceCoreStatus();
+
+            return { updated, added, total: store.length };
         },
 
         // 10. DOCUMENT REFERENCE GENERATOR (SEQUENTIAL ID)
