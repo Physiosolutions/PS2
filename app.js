@@ -7201,11 +7201,15 @@
                         let leaveRowsHtml = "";
                         let leaveYearNote = "";
                         let leavePreAnnualNote = "";
+                        let leaveCycleBreakdownHtml = "";
                         if (email) {
                             const partTimeProfile = isStaffPartTime(email);
                             const myCycle = getStaffAnniversaryCycleRange(email);
                             if (partTimeProfile) {
-                                leaveYearNote = `Part-time · no leave ceiling — "Taken" is the running total of approved days`;
+                                const ptStaff = globalRosterRepository.find(u => u.email === email);
+                                const joinIso = ptStaff && (ptStaff.joiningDate || ptStaff.hireDate);
+                                const joinTxt = joinIso ? ` · joined ${formatDateToDDMMYYYY(joinIso)}` : '';
+                                leaveYearNote = `Part-time · no leave ceiling${joinTxt} — "Taken" is the running total of approved days`;
                             } else if (myCycle) {
                                 leaveYearNote = `Leave year ${formatLeaveCycleLabel(myCycle)} · renews on ${formatDateToDDMMYYYY(formatIsoDateLocal(myCycle.end))}`;
                             }
@@ -7247,6 +7251,58 @@
                                 leaveRowsHtml += `<tr><td><strong>${label}</strong></td><td><span class="badge badge-dark">${limit} d</span></td><td><span class="badge ${badgeClass}">${used} d</span></td><td><span class="badge badge-success">${left} d</span></td></tr>`;
                             });
 
+                            if (partTimeProfile) {
+                                // Part-time staff have no ceiling, so the running "Taken"
+                                // total is also broken down by the joining-anniversary
+                                // leave year each approved day falls in. Days are counted
+                                // once (overlapping requests are de-duplicated) and a leave
+                                // that crosses the anniversary day is split between the two
+                                // years instead of being charged whole to its start year.
+                                const daySet = getStaffApprovedLeaveDaySet(email, null, null);
+                                const cycleBuckets = new Map();
+                                const ensureBucket = (range) => {
+                                    const key = formatIsoDateLocal(range.start);
+                                    if (!cycleBuckets.has(key)) cycleBuckets.set(key, { range: range, days: 0 });
+                                    return cycleBuckets.get(key);
+                                };
+                                const ptStaff = globalRosterRepository.find(u => u.email === email);
+                                const ptJoinIso = ptStaff && (ptStaff.joiningDate || ptStaff.hireDate)
+                                    ? String(ptStaff.joiningDate || ptStaff.hireDate).slice(0, 10) : null;
+                                let beforeJoiningDays = 0;
+                                daySet.forEach(ds => {
+                                    const range = getStaffLeaveCycleRangeForDate(email, ds);
+                                    if (!range || (ptJoinIso && ds < formatIsoDateLocal(range.start))) {
+                                        beforeJoiningDays++;
+                                        return;
+                                    }
+                                    ensureBucket(range).days += 1;
+                                });
+                                const breakdownCurrentCycle = getStaffAnniversaryCycleRange(email);
+                                if (breakdownCurrentCycle) ensureBucket(breakdownCurrentCycle);
+                                const buckets = Array.from(cycleBuckets.values()).sort((a, b) => a.range.start - b.range.start);
+                                if (buckets.length || beforeJoiningDays > 0) {
+                                    const cycleRows = buckets.map(b => {
+                                        const isCurrent = breakdownCurrentCycle &&
+                                            formatIsoDateLocal(b.range.start) === formatIsoDateLocal(breakdownCurrentCycle.start);
+                                        return `<tr>
+                                            <td style="padding:4px 6px;font-size:9px;white-space:nowrap;">${formatLeaveCycleLabel(b.range)}${isCurrent ? ' <span class="badge badge-success" style="font-size:7px;padding:1px 4px;">current</span>' : ''}</td>
+                                            <td style="padding:4px 6px;font-size:9px;text-align:center;font-weight:700;color:var(--primary);">${b.days} d</td>
+                                        </tr>`;
+                                    }).join('');
+                                    const beforeRow = beforeJoiningDays > 0
+                                        ? `<tr><td style="padding:4px 6px;font-size:9px;white-space:nowrap;color:var(--text-muted);">Before joining / outside cycles</td><td style="padding:4px 6px;font-size:9px;text-align:center;font-weight:700;color:var(--text-muted);">${beforeJoiningDays} d</td></tr>`
+                                        : '';
+                                    leaveCycleBreakdownHtml = `<div data-trans-skip="1" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">
+                                        <div style="font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px;">📅 Approved leave days by leave year (split at the joining anniversary)</div>
+                                        <table class="premium-table" style="margin-top:0;">
+                                            <thead><tr><th style="font-size:8px;">Leave year</th><th style="font-size:8px;text-align:center;">Days</th></tr></thead>
+                                            <tbody>${cycleRows}${beforeRow}</tbody>
+                                        </table>
+                                        <div style="font-size:8px;color:var(--text-muted);margin-top:4px;line-height:1.4;">Unique working days across all leave types. A leave that crosses the anniversary date is split so each portion sits in its own leave year.</div>
+                                    </div>`;
+                                }
+                            }
+
                             // Borrowed (pre-annual) days are charged to the next leave
                             // year, so show them separately instead of inflating this year.
                             const nextCycle = getStaffNextLeaveCycleRange(email);
@@ -7284,6 +7340,7 @@
                     <tbody>${leaveRowsHtml}</tbody>
                 </table>
                 ${leavePreAnnualNote}
+                ${leaveCycleBreakdownHtml}
             </div>
 
         </div>
@@ -9191,12 +9248,12 @@
                     // just recorded). Count every approved day of that type ever,
                     // de-duplicated across overlapping records so a split request
                     // is not counted twice.
-                    function getStaffUniqueLeaveDaysAllTime(email, type, mcStatus) {
-                        const wantedType = canonicalLeaveTypeName(type);
+                    function getStaffApprovedLeaveDaySet(email, type, mcStatus) {
+                        const wantedType = type ? canonicalLeaveTypeName(type) : null;
                         const seen = new Set();
                         (globalLeaveRepository || []).forEach(l => {
                             if (l.email !== email || l.status !== 'Approved') return;
-                            if (canonicalLeaveTypeName(l.type) !== wantedType) return;
+                            if (wantedType && canonicalLeaveTypeName(l.type) !== wantedType) return;
                             if (mcStatus && l.mcStatus !== mcStatus) return;
                             const from = l.fromDate || l.date;
                             if (!from) return;
@@ -9213,7 +9270,11 @@
                                 guard++;
                             }
                         });
-                        return seen.size;
+                        return seen;
+                    }
+
+                    function getStaffUniqueLeaveDaysAllTime(email, type, mcStatus) {
+                        return getStaffApprovedLeaveDaySet(email, type, mcStatus).size;
                     }
 
                     // Which leave year (joining-anniversary cycle) a specific date belongs to.
@@ -9242,6 +9303,83 @@
                         const range = getStaffLeaveCycleRangeForDate(email, isoDate);
                         if (!range) return getStaffUsedLeaveDays(email, type, mcStatus);
                         return getStaffUsedLeaveDaysInCycle(email, type, mcStatus, range);
+                    }
+
+                    // Count working days between two local Date objects (inclusive),
+                    // excluding Fridays and PS Calendar holidays — the same rule the
+                    // leave form and the part-time running total already use.
+                    function countLeaveBusinessDaysLocal(startDate, endDate) {
+                        if (!(startDate instanceof Date) || !(endDate instanceof Date)) return 0;
+                        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return 0;
+                        if (endDate < startDate) return 0;
+                        return calculateLeaveBusinessDays(
+                            formatIsoDateLocal(startDate),
+                            formatIsoDateLocal(endDate)
+                        );
+                    }
+
+                    // Split one leave record across the staff member's joining-anniversary
+                    // leave years. A leave that runs from, say, 01/01 to 15/08 for a staff
+                    // member who joined on 31/03 crosses the 31/03 anniversary, so it is
+                    // returned as two portions: one for each leave year. Returns an array
+                    // of { key, range, days, startIso, endIso } in chronological order.
+                    // A leave that never crosses a boundary returns a single portion.
+                    function getLeaveCycleSplitPortions(email, leave) {
+                        const staff = globalRosterRepository.find(u => u.email === email);
+                        if (!staff || !leave) return [];
+                        const fromIso = leave.fromDate || leave.date;
+                        if (!fromIso) return [];
+                        const start = parseIsoDateLocal(fromIso);
+                        const end = parseIsoDateLocal(leave.toDate || leave.date || fromIso) || start;
+                        if (!start || !end) return [];
+
+                        // Pre-annual (borrowed) days are charged to the cycle recorded
+                        // on the request, even when the dates themselves sit elsewhere.
+                        if (leave.preAnnual && leave.preAnnualCycleStart) {
+                            const range = getLeaveCycleRangeFromStartIso(leave.preAnnualCycleStart);
+                            if (!range) return [];
+                            const days = countLeaveBusinessDaysLocal(start, end);
+                            return days > 0 ? [{
+                                key: formatIsoDateLocal(range.start),
+                                range: range,
+                                days: days,
+                                startIso: formatIsoDateLocal(start),
+                                endIso: formatIsoDateLocal(end)
+                            }] : [];
+                        }
+
+                        const portions = [];
+                        let cursor = new Date(start);
+                        let guard = 0;
+                        while (cursor <= end && guard < 200) {
+                            const range = getStaffLeaveCycleRangeForDate(email, formatIsoDateLocal(cursor));
+                            if (!range) break;
+                            const segStart = cursor < range.start ? new Date(range.start) : new Date(cursor);
+                            const segEnd = end < range.end ? new Date(end) : new Date(range.end);
+                            const days = countLeaveBusinessDaysLocal(segStart, segEnd);
+                            if (days > 0) {
+                                const key = formatIsoDateLocal(range.start);
+                                const existing = portions.find(p => p.key === key);
+                                if (existing) {
+                                    existing.days += days;
+                                    existing.endIso = formatIsoDateLocal(segEnd);
+                                } else {
+                                    portions.push({
+                                        key: key,
+                                        range: range,
+                                        days: days,
+                                        startIso: formatIsoDateLocal(segStart),
+                                        endIso: formatIsoDateLocal(segEnd)
+                                    });
+                                }
+                            }
+                            const next = new Date(range.end);
+                            next.setDate(next.getDate() + 1);
+                            if (next <= cursor) break; // safety against a non-advancing cycle
+                            cursor = next;
+                            guard++;
+                        }
+                        return portions;
                     }
 
                     function isStaffPartTime(email) {
@@ -12784,12 +12922,36 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
 
                         allLeaves.forEach(l => {
-                            let lDate = new Date(l.date);
-                            let cycle = cycles.find((c, idx) => {
-                                if (idx === 5) return lDate >= c.start;
-                                return lDate >= c.start && lDate <= c.end;
-                            });
-                            if (cycle) cycle.leaves.push(l);
+                            const portions = getLeaveCycleSplitPortions(staff.email, l);
+                            if (portions.length > 1) {
+                                // This leave crosses one or more joining-anniversary
+                                // boundaries. Push a portion into each cycle it touches so
+                                // the per-year totals (and summary cards) add up correctly,
+                                // instead of charging the whole leave to its start year.
+                                const fullFrom = l.fromDate || l.date;
+                                const fullTo = l.toDate || l.date || fullFrom;
+                                portions.forEach(p => {
+                                    const cycle = cycles.find(c => formatIsoDateLocal(c.start) === p.key);
+                                    if (!cycle) return;
+                                    cycle.leaves.push(Object.assign({}, l, {
+                                        duration: p.days,
+                                        date: p.startIso,
+                                        fromDate: p.startIso,
+                                        toDate: p.endIso,
+                                        _splitPortion: true,
+                                        _fullDuration: Number(l.duration) || p.days,
+                                        _fullFrom: fullFrom,
+                                        _fullTo: fullTo
+                                    }));
+                                });
+                            } else {
+                                let lDate = new Date(l.date);
+                                let cycle = cycles.find((c, idx) => {
+                                    if (idx === 5) return lDate >= c.start;
+                                    return lDate >= c.start && lDate <= c.end;
+                                });
+                                if (cycle) cycle.leaves.push(l);
+                            }
                         });
 
                         tablesContainer.innerHTML = "";
@@ -12892,10 +13054,20 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             } else {
                                 rowsHtml = leaves.map(l => {
                                     const empName = l.employee || (globalRosterRepository.find(u => u.email === l.email) || {}).name || l.email;
+                                    let splitBadge = '';
+                                    if (l._splitPortion) {
+                                        splitBadge = ` <span class="badge badge-warning" style="font-size:7px; padding:1px 4px;" title="Part of a ${l._fullDuration}d leave (${fmtDate(l._fullFrom)} → ${fmtDate(l._fullTo)}) that crosses a leave-year boundary. Only the days inside this leave year are counted here.">◑ split</span>`;
+                                    } else {
+                                        const portions = getLeaveCycleSplitPortions(l.email, l);
+                                        if (portions.length > 1) {
+                                            const detail = portions.map(p => `${p.days}d (${fmtDate(p.startIso)} → ${fmtDate(p.endIso)})`).join('  |  ');
+                                            splitBadge = ` <span class="badge badge-warning" style="font-size:7px; padding:1px 4px;" title="Crosses ${portions.length} leave years — ${detail}. Open the individual cycles to see each portion.">⇄ ${portions.length} years</span>`;
+                                        }
+                                    }
                                     return `<tr>
                     <td style="padding:4px 6px; font-size:10px;"><strong>${empName}</strong></td>
                     <td style="padding:4px 6px; font-size:10px;"><span class="badge ${l.type === 'Sick Leave' ? 'badge-danger' : l.type === 'Annual Leave' ? 'badge-warning' : 'badge-success'}" style="font-size:8px; padding:2px 5px;">${l.type}</span></td>
-                    <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.duration}d</td>
+                    <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.duration}d${splitBadge}</td>
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.fromDate ? fmtDate(l.fromDate) : fmtDate(l.date)}</td>
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.toDate ? fmtDate(l.toDate) : fmtDate(l.date)}</td>
                     <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">${l.submittedAt ? fmtDate(l.submittedAt) : '-'}</td>
@@ -16014,8 +16186,22 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
 
                         if (isStaffPartTime(email)) {
+                            // Show how a range that crosses the joining anniversary is
+                            // split, so it is clear which leave year each part belongs to.
+                            let splitNote = '';
+                            if (isRange) {
+                                const from = document.getElementById('formLeaveDateFrom')?.value;
+                                const to = document.getElementById('formLeaveDateTo')?.value;
+                                if (from && to) {
+                                    const portions = getLeaveCycleSplitPortions(email, { fromDate: from, toDate: to });
+                                    if (portions.length > 1) {
+                                        splitNote = ' Splits across leave years: ' +
+                                            portions.map(p => `<strong>${p.days}d</strong> in ${formatLeaveCycleLabel(p.range)}`).join(' · ') + '.';
+                                    }
+                                }
+                            }
                             warnEl.style.display = 'block';
-                            warnEl.innerHTML = `ℹ️ Part-time profile — leave days are not capped by the full-time ceilings.${cycleNote}`;
+                            warnEl.innerHTML = `ℹ️ Part-time profile — leave days are not capped by the full-time ceilings.${cycleNote}${splitNote}`;
                             return;
                         }
 
