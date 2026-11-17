@@ -13684,7 +13684,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         { key: 'master_ot', label: '💼 Master Overtime & Attendance Log Matrix' },
                         { key: 'sick_matrix', label: '🤒 Sick Leave Matrix' },
                         { key: 'frl_matrix', label: '🤱 FRL Matrix' },
-                        { key: 'full_roster', label: '👥 Full Therapists Roster' }
+                        { key: 'full_roster', label: '👥 Full Therapists Roster' },
+                        { key: 'supervisor_ot', label: '🛠️ Supervisor Overtime & Attendance Entry Panel' }
                     ];
 
                     function getStaffDisplaySettings() {
@@ -13849,6 +13850,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         else if (moduleKey === 'frl_matrix') { if (typeof renderFrlMatrix === 'function') renderFrlMatrix(); }
                         else if (moduleKey === 'master_ot') { if (typeof renderMasterOTScheduleMatrix === 'function') renderMasterOTScheduleMatrix(); }
                         else if (moduleKey === 'full_roster') { if (typeof renderFullTherapistsRoster === 'function') renderFullTherapistsRoster(); }
+                        else if (moduleKey === 'supervisor_ot') { if (typeof renderSupervisorMultiTherapistOTGrid === 'function') renderSupervisorMultiTherapistOTGrid(); }
                     }
 
                     function resetModuleStaffOrder(moduleKey) {
@@ -13943,6 +13945,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         reRenderStaffModule('frl_matrix');
                         reRenderStaffModule('master_ot');
                         reRenderStaffModule('full_roster');
+                        reRenderStaffModule('supervisor_ot');
                     }
 
                     function renderSickLeaveMatrix() {
@@ -15365,16 +15368,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         scope.forEach(item => {
                             const isPending = item.status === "Pending Approval";
                             const isAllowedToApprove = isLeaveApprover;
-                            const leaveEndDate = item.toDate || item.date;
-                            // A request that is still pending has not been approved or
-                            // taken yet, so its owner can correct it even when the date
-                            // is in the past. Approved leave keeps the past-day lock, but
-                            // the MC status marker on Sick Leave can always be corrected
-                            // (it only changes which MC bucket the day counts against).
+                            // The owner (or an approver) may manage any leave that is
+                            // still live: pending, upcoming, ongoing, or already finished
+                            // but not yet cancelled. Fully-past approved leave stays
+                            // manageable so a leave that was never actually taken can be
+                            // cancelled; the modal still blocks date edits on it.
                             const canManageThisLeave = (item.email === currentActiveSessionUser.email || isLeaveApprover)
                                 && item.status !== 'Rejected'
-                                && item.status !== 'Cancelled'
-                                && (isPending || leaveEndDate >= leaveTodayIso() || item.type === 'Sick Leave');
+                                && item.status !== 'Cancelled';
                             const actionButtons = [
                                 (isPending && isAllowedToApprove)
                                     ? `<button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
@@ -16475,6 +16476,26 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         user[key] = Math.max(0, (user[key] || 0) + deltaDays);
                     }
 
+                    // Whether approving this record actually deducted days from the
+                    // staff member's profile balance. This mirrors the deduction rules
+                    // used when a leave is approved/submitted, so a refund is only ever
+                    // issued when a deduction really happened:
+                    //   - part-time staff have no ceiling, so nothing is deducted;
+                    //   - pre-annual days are repaid from the next leave year;
+                    //   - historical records belong to a closed cycle that was never
+                    //     charged against the profile counters.
+                    function leaveApprovalConsumedBalance(item) {
+                        if (!item || !item.email) return false;
+                        if (item.preAnnual) return false;
+                        if (isStaffPartTime(item.email)) return false;
+                        const start = item.fromDate || item.date;
+                        const itemCycle = getStaffLeaveCycleRangeForDate(item.email, start);
+                        const currentCycle = getStaffAnniversaryCycleRange(item.email);
+                        const itemIsCurrentCycle = !itemCycle || !currentCycle ||
+                            formatIsoDateLocal(itemCycle.start) === formatIsoDateLocal(currentCycle.start);
+                        return itemIsCurrentCycle;
+                    }
+
                     function canModifyLeaveRecord(item) {
                         if (!currentActiveSessionUser || !item) return false;
                         return item.email === currentActiveSessionUser.email ||
@@ -16511,32 +16532,39 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const b = splitLeaveBounds(item);
                         const isPendingRequest = item.status === 'Pending Approval';
                         if (!isPendingRequest && b.to < b.today) {
-                            // Approved days in the past cannot be re-dated, but the MC
-                            // status marker can still be corrected on Sick Leave.
-                            if (item.type !== 'Sick Leave') {
-                                customAlert("This leave is fully in the past. Days already taken cannot be changed.");
-                                return;
-                            }
-                            const mountMc = document.getElementById('systemGlobalModalMount');
-                            mountMc.innerHTML = `
-        <div class="system-inline-modal-overlay">
-            <div class="system-inline-modal-box" style="width:420px;">
-                <h3 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">🩺 Correct MC Status: ${item.employee}</h3>
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
-                    ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
-                    Status: <strong>${item.status}</strong> · Current MC: <strong>${item.mcStatus || 'Not set'}</strong><br>
-                    This leave is already approved and in the past, so only the MC status can be corrected. The dates and the sick-leave balance stay unchanged.
-                </div>
+                            // Fully-past approved leave. The dates are locked because the
+                            // days have already been recorded, but the owner (or an
+                            // approver) can cancel the whole record when the leave was
+                            // never actually taken. Sick Leave also keeps its MC
+                            // correction. Both changes are audit-noted.
+                            const pastMcField = item.type === 'Sick Leave' ? `
                 <div class="form-group" style="margin-bottom:10px;">
                     <label>MC Status</label>
-                    <select id="leaveModMcOnly">
+                    <select id="leaveModMc">
+                        ${!item.mcStatus ? '<option value="" selected>Not set</option>' : ''}
                         <option value="With MC" ${item.mcStatus === 'With MC' ? 'selected' : ''}>With MC</option>
                         <option value="Without MC" ${item.mcStatus === 'Without MC' ? 'selected' : ''}>Without MC</option>
                     </select>
+                </div>` : '';
+                            const pastSaveMcBtn = item.type === 'Sick Leave'
+                                ? `<button class="action-btn" style="background:var(--primary);" onclick="commitLeaveMcCorrection(${id})">Save MC Correction</button>`
+                                : '';
+                            const mountMc = document.getElementById('systemGlobalModalMount');
+                            mountMc.innerHTML = `
+        <div class="system-inline-modal-overlay">
+            <div class="system-inline-modal-box" style="width:440px;">
+                <h3 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">✏️ Manage Leave: ${item.employee}</h3>
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+                    ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
+                    Status: <strong>${item.status}</strong>${item.mcStatus ? ` · MC: <strong>${item.mcStatus}</strong>` : ''}
+                    ${item.preAnnual ? `<br><strong>Pre-annual</strong> — counts against the next leave year, not this one.` : ''}
+                    <br>This leave is already in the past, so the dates are locked and the days already recorded stay as they are. If the leave was <strong>never actually taken</strong>, cancel the whole record below — the balance is returned and the row is kept as Cancelled for the audit trail.
                 </div>
+                ${pastMcField}
                 <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px;">
                     <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Close</button>
-                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeaveMcCorrection(${id})">Save MC Correction</button>
+                    <button class="action-btn" style="background:var(--danger);" onclick="cancelLeaveRemainingDays(${id})">Cancel This Leave</button>
+                    ${pastSaveMcBtn}
                 </div>
             </div>
         </div>`;
@@ -16708,9 +16736,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                         // An approved leave already consumed its full duration from the
                         // balance. Give back the portion being rescheduled - it is deducted
-                        // again only if the new request gets approved. Pre-annual leave
-                        // never touched the current balance, so there is nothing to refund.
-                        if (item.status === 'Approved' && !item.preAnnual && remainingOriginal > 0) {
+                        // again only if the new request gets approved. Nothing is refunded
+                        // when no deduction ever happened (pre-annual, part-time, or a
+                        // historical cycle).
+                        if (item.status === 'Approved' && remainingOriginal > 0 && leaveApprovalConsumedBalance(item)) {
                             adjustLeaveBalanceDelta(item.email, item.type, remainingOriginal);
                         }
 
@@ -16775,7 +16804,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             customAlert("MC status only applies to Sick Leave records.");
                             return;
                         }
-                        const sel = document.getElementById('leaveModMcOnly');
+                        const sel = document.getElementById('leaveModMcOnly') || document.getElementById('leaveModMc');
                         const newMcStatus = sel ? sel.value : '';
                         if (!newMcStatus) {
                             customAlert("Please pick the correct MC status.");
@@ -16811,9 +16840,32 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (!item || !canModifyLeaveRecord(item)) return;
                         const b = splitLeaveBounds(item);
-                        if (b.to < b.today) { customAlert("This leave is fully in the past and cannot be cancelled."); return; }
-
                         const originalDuration = item.duration || calculateLeaveBusinessDays(b.from, b.to) || 0;
+
+                        // Fully-past approved leave: the days are already recorded, but the
+                        // owner (or an approver) may cancel the whole record when the leave
+                        // was never actually taken. This is the only way to remove an
+                        // approved leave that was not used.
+                        if (b.to < b.today) {
+                            customConfirm(`Cancel this ${item.type} record for ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${originalDuration}d)? Use this only if the leave was never actually taken. The balance will be returned and the record is kept as Cancelled for the audit trail.`, function () {
+                                const live = globalLeaveRepository.find(l => l.id === id);
+                                if (!live) return;
+                                const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+                                if (live.status === 'Approved' && originalDuration > 0 && leaveApprovalConsumedBalance(live)) {
+                                    adjustLeaveBalanceDelta(live.email, live.type, originalDuration);
+                                }
+                                // Keep the row for the audit trail instead of deleting it.
+                                live.status = 'Cancelled';
+                                live.note = (live.note || '') + ` [Cancelled (never taken) ${stamp}]`;
+                                closeSystemModalBox();
+                                customAlert(`Leave record cancelled.${originalDuration > 0 ? ' The balance was returned.' : ''} The record is kept as Cancelled for the audit trail.`);
+                                persistCoreStores();
+                                synchronizeWorkspaceCoreStatus();
+                                renderLeaveManagementPortlet();
+                            });
+                            return;
+                        }
+
                         const remainingDays = b.pastDays > 0
                             ? Math.max(0, originalDuration - b.pastDays)
                             : originalDuration;
@@ -16823,9 +16875,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const stamp = formatDateToDDMMYYYY(b.today) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
 
                             // Approved leave already deducted its duration - give the
-                            // cancelled portion back to the balance. Pre-annual leave was
-                            // never deducted from the current balance.
-                            if (live.status === 'Approved' && remainingDays > 0 && !live.preAnnual) {
+                            // cancelled portion back to the balance. Nothing is refunded
+                            // when no deduction ever happened (pre-annual, part-time, or
+                            // a historical cycle).
+                            if (live.status === 'Approved' && remainingDays > 0 && leaveApprovalConsumedBalance(live)) {
                                 adjustLeaveBalanceDelta(live.email, live.type, remainingDays);
                             }
 
@@ -16870,14 +16923,14 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
                         const from = item.fromDate || item.date;
                         const to = item.toDate || item.date;
-                        const refund = (item.status === 'Approved' && !item.preAnnual) ? (item.duration || 0) : 0;
+                        const refund = (item.status === 'Approved' && leaveApprovalConsumedBalance(item)) ? (item.duration || 0) : 0;
                         const refundNote = refund > 0 ? ` ${refund} day(s) will be returned to the ${item.type} balance.` : '';
                         customConfirm(`Permanently delete ${item.employee}'s ${item.type} record for ${formatDateToDDMMYYYY(from)} → ${formatDateToDDMMYYYY(to)}?${refundNote}`, function () {
                             const live = globalLeaveRepository.find(l => l.id === id);
                             if (!live) return;
                             const liveFrom = live.fromDate || live.date;
                             const liveTo = live.toDate || live.date;
-                            if (String(live.status || '').toLowerCase() === 'approved' && live.duration > 0 && !live.preAnnual) {
+                            if (String(live.status || '').toLowerCase() === 'approved' && live.duration > 0 && leaveApprovalConsumedBalance(live)) {
                                 adjustLeaveBalanceDelta(live.email, live.type, live.duration);
                             }
                             globalLeaveRepository = globalLeaveRepository.filter(l => l.id !== id);
@@ -20126,7 +20179,8 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         tfoot.innerHTML = "";
 
                         const supervisorRoles = getSupervisorOtAllowedRoles();
-                        const activeTherapists = globalRosterRepository.filter(u => u.active !== false && supervisorRoles.includes(u.position));
+                        const activeTherapists = sortStaffByModuleOrder('supervisor_ot',
+                            globalRosterRepository.filter(u => u.active !== false && supervisorRoles.includes(u.position)));
                         const activeCount = activeTherapists.length;
 
                         // 1. Build Header row
@@ -20138,7 +20192,13 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         let hRow2 = `<tr>`;
 
                         activeTherapists.forEach(staff => {
-                            hRow1 += `<th colspan="4" style="text-align:center; border-bottom:1px solid var(--border); background:var(--primary);color:#fff;">${staff.name}</th>`;
+                            const otName = getStaffDisplayName(staff.email, 'supervisor_ot', staff.name);
+                            hRow1 += `<th data-staff-email="${escHtml(staff.email)}" colspan="4" draggable="true"`
+                                + ` ondragstart="onStaffReorderDragStart(event,'supervisor_ot','${escHtml(staff.email)}')"`
+                                + ` ondragend="onStaffReorderDragEnd(event)"`
+                                + ` ondragover="onStaffReorderDragOver(event,'supervisor_ot')"`
+                                + ` ondrop="onStaffReorderDrop(event,'supervisor_ot','${escHtml(staff.email)}')"`
+                                + ` title="Drag to reorder · ${escHtml(otName)}" style="text-align:center; border-bottom:1px solid var(--border); background:var(--primary);color:#fff;cursor:grab;">${escHtml(otName)}</th>`;
                             hRow2 += `
             <th style="font-size:9px;background:var(--primary);color:#fff;">Patients 150</th>
             <th style="font-size:9px;background:var(--primary);color:#fff;">Patients 200</th>

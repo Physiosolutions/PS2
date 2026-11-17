@@ -5848,6 +5848,10 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                                 <button class="action-btn"
                                     style="background:var(--warning);font-size:10px;padding:4px 10px;"
                                     onclick="openSupervisorOtRolesConfig()">⚙️ Configure</button>
+                                <button class="action-btn"
+                                    style="background:var(--bg-card);border:1px solid var(--border);font-size:10px;padding:4px 10px;"
+                                    onclick="openStaffDisplaySettingsModal('supervisor_ot')" data-trans-skip="1">🎛️ Names &amp;
+                                    Order</button>
                                 <button class="action-btn" style="background:var(--success);"
                                     onclick="commitAllSupervisorAdminOverwrites()"
                                     data-trans-key="Save Complete Roster Matrix">Save Complete Roster Matrix</button>
@@ -5863,7 +5867,8 @@ manager@physiosolutions.mv" spellcheck="true" autocomplete="on" autocorrect="on"
                         <!-- 1. The Entry Table (flex to fill remaining card space) -->
                         <div
                             style="overflow-y: auto; flex: 1; min-height: 0; border:1px solid var(--border); border-radius:10px; background: var(--bg-surface); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--glass-shadow);">
-                            <table class="premium-table" style="text-align:center; width:100%;" role="table">
+                            <table class="premium-table" style="text-align:center; width:100%;" role="table"
+                                data-staff-reorder="supervisor_ot">
                                 <thead id="supervisorOTGridHeader"></thead>
                                 <tbody id="supervisorOTGridBody"></tbody>
                                 <tfoot id="supervisorOTGridFooter"
