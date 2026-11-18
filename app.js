@@ -5113,42 +5113,31 @@
                     }
 
                     // ===== SESSION RESTORE =====
-                    // The tab-scoped marker survives a refresh, but a reopened tab or a
-                    // browser that drops sessionStorage loses it, so a small device-level
-                    // record (email + timestamp only) is kept as well. It is excluded from
-                    // cloud sync in cloud-sync.js: a session must never travel to another
-                    // device. Exit/Logout clears both markers explicitly.
+                    // The session marker lives in sessionStorage only. That survives a
+                    // refresh or an automatic cloud reload in the same tab, but it is
+                    // dropped when the tab is closed or the URL is opened fresh — so a
+                    // fresh visit shows the sign-in screen instead of silently logging
+                    // the previous user back in. Older builds kept a 30-day copy in
+                    // localStorage; it is cleared on read and on logout so a device can
+                    // never auto-restore a session again.
                     const PHYSIO_SAVED_SESSION_KEY = 'physioSavedSession';
-                    const PHYSIO_SAVED_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
                     let physioSessionRestorePending = false;
                     let physioSessionRestoreAttempts = 0;
                     let physioSessionRestoreDefinitiveFailure = false;
 
                     function readSavedSessionEmail() {
+                        try { localStorage.removeItem(PHYSIO_SAVED_SESSION_KEY); } catch (e) { }
                         try {
                             const tabEmail = sessionStorage.getItem('physioActiveSessionEmail');
                             if (tabEmail) return tabEmail;
                         } catch (e) { }
-                        try {
-                            const raw = localStorage.getItem(PHYSIO_SAVED_SESSION_KEY);
-                            if (!raw) return '';
-                            const record = JSON.parse(raw);
-                            if (!record || !record.email) return '';
-                            const savedAt = Number(record.at) || 0;
-                            if (savedAt && (Date.now() - savedAt) > PHYSIO_SAVED_SESSION_TTL_MS) {
-                                localStorage.removeItem(PHYSIO_SAVED_SESSION_KEY);
-                                return '';
-                            }
-                            return String(record.email);
-                        } catch (e) {
-                            return '';
-                        }
+                        return '';
                     }
 
                     function rememberSavedSession(email) {
                         if (!email) return;
                         try { sessionStorage.setItem('physioActiveSessionEmail', email); } catch (e) { }
-                        try { localStorage.setItem(PHYSIO_SAVED_SESSION_KEY, JSON.stringify({ email: email, at: Date.now() })); } catch (e) { }
+                        try { localStorage.removeItem(PHYSIO_SAVED_SESSION_KEY); } catch (e) { }
                     }
 
                     function forgetSavedSession() {
@@ -6597,27 +6586,20 @@
                         if (!anchor) return;
                         anchor.innerHTML = "";
 
-                        // Get today's local system date safely at midnight local time
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
+                        // Compare ISO date strings ("YYYY-MM-DD") instead of Date objects.
+                        // A leave covers every calendar day from fromDate to toDate; its
+                        // "duration" is counted in business days (Fridays/holidays removed),
+                        // so re-deriving the end from duration under-counts and drops staff
+                        // whose leave is still running in its later, calendar-only stretch.
+                        const now = new Date();
+                        const todayIso = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 
                         const activeToday = globalLeaveRepository.filter(l => {
                             if (l.status !== "Approved") return false;
-
-                            // Parse "YYYY-MM-DD" safely to avoid timezone discrepancies
-                            const dateParts = l.date.split('-');
-                            if (dateParts.length !== 3) return false;
-
-                            const leaveStart = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-                            const leaveEnd = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-
-                            // Add duration in days (inclusive of start day) to find end boundary
-                            leaveEnd.setDate(leaveStart.getDate() + (parseInt(l.duration) || 1) - 1);
-
-                            leaveStart.setHours(0, 0, 0, 0);
-                            leaveEnd.setHours(0, 0, 0, 0);
-
-                            return (today >= leaveStart && today <= leaveEnd);
+                            const startIso = String(l.fromDate || l.date || '').slice(0, 10);
+                            if (!startIso) return false;
+                            const endIso = String(getLeaveRecordEndIso(l) || l.toDate || startIso).slice(0, 10);
+                            return todayIso >= startIso && todayIso <= endIso;
                         });
 
                         if (activeToday.length === 0) {
@@ -7414,7 +7396,12 @@
                     function handleBrandingBgUpload(inputElement) {
                         const file = inputElement.files[0];
                         if (file) {
-                            compressAndResizeImage(file, 1200).then(function (data) {
+                            // A login background is stretched across the whole viewport
+                            // (background-size: cover), so a 1200px / q0.85 JPEG looked
+                            // soft on large screens. Keep a much larger edge and a high
+                            // JPEG quality; the cloud store chunks values up to 10 MB,
+                            // and images already smaller than the cap stay untouched.
+                            compressAndResizeImage(file, 2560, 0.92).then(function (data) {
                                 document.getElementById('themeLoginBgInput').value = data;
                                 customAlert("Background image parsed successfully. Click 'Save Brand Identity System' to apply changes.");
                             });
@@ -8895,6 +8882,47 @@
                     // The table on the admin hub reads globalLoginLogsRepository, but
                     // nothing ever wrote to it, so it always looked empty.
                     // ------------------------------------------------------------------
+                    // Public IP and rough location are not visible to page JS. The edge
+                    // (/whoami) echoes them for the caller; we warm the cache at startup
+                    // so the next sign-in already has them to store.
+                    let physioClientGeo = null;
+                    let physioClientGeoPromise = null;
+
+                    function getPhysioCloudBaseUrl() {
+                        try {
+                            if (window.PhysioCloud && window.PhysioCloud.baseUrl) {
+                                return String(window.PhysioCloud.baseUrl).replace(/\/+$/, '');
+                            }
+                        } catch (e) { }
+                        return 'https://physio-cloud.psfamily.workers.dev';
+                    }
+
+                    function fetchClientGeo() {
+                        if (physioClientGeo) return Promise.resolve(physioClientGeo);
+                        if (physioClientGeoPromise) return physioClientGeoPromise;
+                        physioClientGeoPromise = fetch(getPhysioCloudBaseUrl() + '/whoami', { method: 'GET' })
+                            .then(function (res) { return res.ok ? res.json() : null; })
+                            .then(function (data) {
+                                if (!data || !data.ok) return null;
+                                const lat = parseFloat(data.lat);
+                                const lng = parseFloat(data.lng);
+                                physioClientGeo = {
+                                    ip: data.ip || '',
+                                    location: data.location || '',
+                                    lat: isFinite(lat) ? lat : undefined,
+                                    lng: isFinite(lng) ? lng : undefined
+                                };
+                                return physioClientGeo;
+                            })
+                            .catch(function () { return null; })
+                            .then(function (geo) { physioClientGeoPromise = null; return geo; });
+                        return physioClientGeoPromise;
+                    }
+
+                    function primeClientGeo() {
+                        try { fetchClientGeo(); } catch (e) { }
+                    }
+
                     function describeAuditDevice() {
                         try {
                             const ua = navigator.userAgent || '';
@@ -8929,14 +8957,17 @@
                                     if (!isNaN(recentTime) && recentTime >= cutoff) return;
                                 }
                             }
+                            const geo = physioClientGeo;
                             const entry = {
                                 id: (globalLoginLogsRepository.reduce((max, log) => Math.max(max, Number(log && log.id) || 0), 0)) + 1,
                                 name: info.name || user.name || info.identifier || 'Unknown',
                                 email: entryEmail,
                                 role: info.role || user.position || '',
-                                ip: info.ip || '—',
+                                ip: info.ip || (geo && geo.ip) || '—',
                                 device: describeAuditDevice(),
-                                location: info.location || '—',
+                                location: info.location || (geo && geo.location) || '—',
+                                lat: geo && typeof geo.lat === 'number' ? geo.lat : undefined,
+                                lng: geo && typeof geo.lng === 'number' ? geo.lng : undefined,
                                 timestamp: new Date().toLocaleString('en-GB'),
                                 createdAt: new Date().toISOString(),
                                 status: status || 'success'
@@ -8949,6 +8980,22 @@
                             try { localStorage.setItem('physioLoginSessionLogs', JSON.stringify(globalLoginLogsRepository)); } catch (e) { }
                             const tbody = document.getElementById('loginSessionAuditsTableBody');
                             if (tbody) renderLoginSessionsAuditsTrailTable();
+
+                            // The first sign-in of a fresh load can race the geo fetch.
+                            // Fill the entry in as soon as the answer arrives.
+                            if (!geo && (status === 'success' || status === 'failed')) {
+                                fetchClientGeo().then(function (g) {
+                                    if (!g || (!g.ip && !g.location)) return;
+                                    entry.ip = info.ip || g.ip || entry.ip;
+                                    entry.location = info.location || g.location || entry.location;
+                                    if (typeof g.lat === 'number') entry.lat = g.lat;
+                                    if (typeof g.lng === 'number') entry.lng = g.lng;
+                                    try { localStorage.setItem('physioLoginSessionLogs', JSON.stringify(globalLoginLogsRepository)); } catch (e) { }
+                                    try {
+                                        if (document.getElementById('loginSessionAuditsTableBody')) renderLoginSessionsAuditsTrailTable();
+                                    } catch (e) { }
+                                });
+                            }
                         } catch (e) { }
                     }
 
@@ -21580,6 +21627,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             }
                         }
                         loadBrandingConfig();
+                        primeClientGeo();
                         rebuildSystemRosterGridSkeleton();
                         initializeTranslationObserver();
                         updateDynamicLogos();

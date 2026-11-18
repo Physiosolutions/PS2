@@ -20,6 +20,7 @@
  *   POST   /auth/logout
  *   GET    /auth/me
  *   GET    /stats                   counts + storage mode
+ *   GET    /whoami                  caller IP + edge geo (no auth)
  *   GET    /sync?since=<ms>         -> {entries:[{key,value,updated_at}]}
  *   POST   /sync                    {entries:[{key,value,updatedAt}]}
  *   POST   /photos                  multipart: file, key?
@@ -179,6 +180,34 @@ async function route(request, env) {
       r2: !!env.PHOTOS,
       storage: 'D1 + KV' + (env.PHOTOS ? ' + R2' : ''),
       serverTime: Date.now(),
+    });
+  }
+
+  // ---------- client network identity (no auth: echoes the caller only) ----------
+  // The browser cannot see its own public IP or rough location, so the login
+  // audit trail asks the edge. Cloudflare fills request.cf and the
+  // CF-Connecting-IP header; when they are missing (e.g. local wrangler dev)
+  // we return empty fields and the UI shows a dash.
+  if (path === '/whoami' && method === 'GET') {
+    const cf = request.cf || {};
+    const ip = request.headers.get('CF-Connecting-IP')
+      || request.headers.get('X-Real-IP')
+      || (request.headers.get('X-Forwarded-For') || '').split(',')[0].trim()
+      || '';
+    const country = cf.country || request.headers.get('CF-IPCountry') || '';
+    const city = cf.city || '';
+    const region = cf.region || cf.regionCode || '';
+    const location = [city, region, country].filter(Boolean).join(', ');
+    return json({
+      ok: true,
+      ip,
+      country,
+      city,
+      region,
+      lat: cf.latitude || '',
+      lng: cf.longitude || '',
+      timezone: cf.timezone || '',
+      location
     });
   }
 
