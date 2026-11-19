@@ -93,9 +93,12 @@
                     function calculateRosterLeaveBalances(email) {
                         const user = globalRosterRepository.find(u => u.email === email);
 
-                        const maxSick = parseFloat(document.getElementById('lSickCeil')?.value) || 30;
-                        const maxAnnual = parseFloat(document.getElementById('lAnnualCeil')?.value) || 30;
-                        const maxFamily = parseFloat(document.getElementById('lFamilyCeil')?.value) || 15;
+                        // Use the same configured ceilings as the rest of the app.
+                        // (The old code read a non-existent 'lSickCeil' input, so the
+                        // Sick Leave figure always fell back to 30.)
+                        const maxSick = getCeilingLimit('Sick Leave', 'With MC');
+                        const maxAnnual = getCeilingLimit('Annual Leave', null);
+                        const maxFamily = getCeilingLimit('Family Leave', null);
 
                         if (!user) return { sickTaken: 0, sickLeft: maxSick, annualTaken: 0, annualLeft: maxAnnual, familyTaken: 0, familyLeft: maxFamily };
 
@@ -9099,28 +9102,30 @@
                             "Maternity Leave": 90, "Paternity Leave": 10, "Special Leave": 15,
                             "Annual Leave": 30, "Family Leave": 15
                         };
+                        // Treat only undefined/null/'' as "not configured" so a saved 0
+                        // (leave type disabled by ceiling) survives instead of becoming 30.
+                        const pick = (value, fallback) => (value === undefined || value === null || value === '') ? fallback : value;
                         try {
                             const saved = localStorage.getItem('physioLeaveCeilings');
                             if (saved) {
                                 const cfg = JSON.parse(saved);
                                 if (canonicalType === 'Sick Leave') {
-                                    if (mcStatus === 'With MC') return cfg['Sick Leave (With MC)'] || 30;
+                                    if (mcStatus === 'With MC') return pick(cfg['Sick Leave (With MC)'], 30);
                                     const noMcEl = document.getElementById('withoutMcLimitInput');
-                                    const noMcVal = noMcEl ? parseInt(noMcEl.value) || 3 : 3;
-                                    if (cfg['Sick Leave (Without MC)'] !== undefined) return cfg['Sick Leave (Without MC)'];
-                                    return noMcVal;
+                                    const noMcVal = noMcEl ? parseInt(noMcEl.value, 10) : 3;
+                                    return pick(cfg['Sick Leave (Without MC)'], isFinite(noMcVal) ? noMcVal : 3);
                                 }
                                 if (cfg[canonicalType] !== undefined) return cfg[canonicalType];
                                 if (canonicalType === 'Family Leave' && cfg['Family Responsibility Leave'] !== undefined) return cfg['Family Responsibility Leave'];
-                                return defaults[canonicalType] || 30;
+                                return pick(defaults[canonicalType], 30);
                             }
                         } catch (e) { }
                         if (canonicalType === 'Sick Leave') {
                             const noMcEl = document.getElementById('withoutMcLimitInput');
-                            const noMcVal = noMcEl ? parseInt(noMcEl.value) || 3 : 3;
-                            return mcStatus === 'With MC' ? 30 : noMcVal;
+                            const noMcVal = noMcEl ? parseInt(noMcEl.value, 10) : 3;
+                            return mcStatus === 'With MC' ? 30 : (isFinite(noMcVal) ? noMcVal : 3);
                         }
-                        return defaults[canonicalType] || 30;
+                        return pick(defaults[canonicalType], 30);
                     }
 
                     function saveDashboardLeaveVisibility() {
@@ -9489,8 +9494,10 @@
                         return iso || formatIsoDateLocal(new Date());
                     }
 
-                    function saveLeaveCeilingLimits() {
-                        const types = [
+                    // The one source of truth mapping each leave type to its
+                    // visibility checkbox and its day-allocation input.
+                    function getLeaveCeilingFieldDefinitions() {
+                        return [
                             { id: "Umrah Leave", show: "lUmrahShow", ceil: "lUmrahCeil" },
                             { id: "Hajj Leave", show: "lHajjShow", ceil: "lHajjCeil" },
                             { id: "No Paid Leave", show: "lNoPaidShow", ceil: "lNoPaidCeil" },
@@ -9502,6 +9509,36 @@
                             { id: "Annual Leave", show: "lAnnualShow", ceil: "lAnnualCeil" },
                             { id: "Family Leave", show: "lFamilyShow", ceil: "lFamilyCeil" }
                         ];
+                    }
+
+                    // The panel is static markup with hard-coded default numbers, so
+                    // without this the inputs snapped back to 15/30/... on every reload
+                    // and the next save wrote those defaults over the admin's real
+                    // values. Restore the saved numbers and visibility on boot.
+                    function loadLeaveCeilingLimits() {
+                        const types = getLeaveCeilingFieldDefinitions();
+                        let ceilings = null;
+                        let visible = null;
+                        try { ceilings = JSON.parse(localStorage.getItem('physioLeaveCeilings') || 'null'); } catch (e) { }
+                        try { visible = JSON.parse(localStorage.getItem('physioVisibleLeaveTypes') || 'null'); } catch (e) { }
+                        const visibleList = Array.isArray(visible) ? visible : null;
+                        types.forEach(t => {
+                            const showEl = document.getElementById(t.show);
+                            if (showEl && visibleList) {
+                                // Legacy configs stored one "Sick Leave" toggle for both buckets.
+                                const legacySick = t.id.indexOf('Sick Leave') === 0 && visibleList.includes('Sick Leave');
+                                showEl.checked = visibleList.includes(t.id) || legacySick;
+                            }
+                            const ceilEl = document.getElementById(t.ceil);
+                            if (!ceilEl || !ceilings) return;
+                            let value = ceilings[t.id];
+                            if (value === undefined && t.id === 'Family Leave') value = ceilings['Family Responsibility Leave'];
+                            if (value !== undefined && value !== null && value !== '') ceilEl.value = value;
+                        });
+                    }
+
+                    function saveLeaveCeilingLimits() {
+                        const types = getLeaveCeilingFieldDefinitions();
                         globalVisibleLeaveTypes = types.filter(t => {
                             const el = document.getElementById(t.show);
                             return el && el.checked;
@@ -9510,7 +9547,11 @@
                         const ceilings = {};
                         types.forEach(t => {
                             const el = document.getElementById(t.ceil);
-                            if (el) ceilings[t.id] = parseInt(el.value) || 30;
+                            if (!el) return;
+                            const parsed = parseInt(el.value, 10);
+                            // 0 is a legitimate ceiling ("not allowed"), so it must not
+                            // fall through to the default the way `|| 30` did.
+                            ceilings[t.id] = isFinite(parsed) ? Math.max(0, parsed) : 30;
                         });
                         localStorage.setItem('physioLeaveCeilings', JSON.stringify(ceilings));
                         populateLeaveTypeDropdown();
@@ -15550,6 +15591,18 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         // requested dates belong to, so historical records count against
                         // their own year instead of the current one.
                         const email = currentActiveSessionUser?.email;
+
+                        // A run of more than two consecutive sick days needs a Medical
+                        // Certificate, even when it was filed as separate one-day
+                        // requests. Enforce it here too, not only by disabling the radio.
+                        if (email && type === 'Sick Leave' && mcStatus === 'Without MC') {
+                            const runDays = getSickLeaveConsecutiveRunDays(email, fromDate, toDate);
+                            if (runDays > 2) {
+                                customAlert(`Sick leave without a Medical Certificate is allowed for at most 2 consecutive days. These dates form ${runDays} consecutive day(s) together with your other approved sick leave, so a Medical Certificate is required.`);
+                                return;
+                            }
+                        }
+
                         if (email) {
                             const requestCycle = getStaffLeaveCycleRangeForDate(email, fromDate);
                             const cycleNote = requestCycle ? ` (leave year ${formatLeaveCycleLabel(requestCycle)})` : '';
@@ -15738,14 +15791,22 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             if (visSaved) {
                                 globalVisibleLeaveTypes = JSON.parse(visSaved);
                                 const checkboxMap = {
-                                    "Sick Leave": "lSickShow", "Annual Leave": "lAnnualShow", "Family Leave": "lFamilyShow",
                                     "Umrah Leave": "lUmrahShow", "Hajj Leave": "lHajjShow", "No Paid Leave": "lNoPaidShow",
-                                    "Maternity Leave": "lMaternityShow", "Paternity Leave": "lPaternityShow", "Special Leave": "lSpecialShow"
+                                    "Maternity Leave": "lMaternityShow", "Paternity Leave": "lPaternityShow", "Special Leave": "lSpecialShow",
+                                    "Annual Leave": "lAnnualShow", "Family Leave": "lFamilyShow",
+                                    "Sick Leave (With MC)": "lSickMcShow", "Sick Leave (Without MC)": "lSickNoMcShow"
                                 };
                                 Object.keys(checkboxMap).forEach(type => {
                                     const el = document.getElementById(checkboxMap[type]);
                                     if (el) el.checked = globalVisibleLeaveTypes.includes(type);
                                 });
+                                // Legacy configs stored one "Sick Leave" toggle for both buckets.
+                                if (globalVisibleLeaveTypes.includes("Sick Leave")) {
+                                    const mc = document.getElementById('lSickMcShow');
+                                    const noMc = document.getElementById('lSickNoMcShow');
+                                    if (mc) mc.checked = true;
+                                    if (noMc) noMc.checked = true;
+                                }
                             }
                         } catch (e) { }
                         populateLeaveTypeDropdown();
@@ -16280,6 +16341,91 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
                     }
 
+                    // The ISO range the leave form is currently working with.
+                    function getLeaveFormRequestRangeIso() {
+                        const rangeMode = document.getElementById('leaveDateRangeMode');
+                        const isRange = rangeMode && rangeMode.style.display !== 'none';
+                        if (isRange) {
+                            const from = document.getElementById('formLeaveDateFrom')?.value || '';
+                            const to = document.getElementById('formLeaveDateTo')?.value || from;
+                            return { from: from, to: to || from };
+                        }
+                        const single = document.getElementById('formLeaveDate')?.value || '';
+                        return { from: single, to: single };
+                    }
+
+                    // "More than 2 consecutive days of sick leave requires a Medical
+                    // Certificate." Staff can dodge that by filing each day as its own
+                    // one-day request, so the run is measured across every approved sick
+                    // day that touches the request — not just the request itself.
+                    // Fridays and PS Calendar holidays are non-working and do not break
+                    // the run. Returns the number of working days in the joined run.
+                    function getSickLeaveConsecutiveRunDays(email, startIso, endIso) {
+                        if (!email || !startIso) return 0;
+                        const days = new Set();
+                        const addRange = (fromIso, toIso) => {
+                            const s = parseIsoDateLocal(fromIso);
+                            const e = parseIsoDateLocal(toIso || fromIso) || s;
+                            if (!s || !e) return;
+                            const cur = new Date(s);
+                            let guard = 0;
+                            while (cur <= e && guard < 1500) {
+                                const ds = formatIsoDateLocal(cur);
+                                if (cur.getDay() !== 5 && !isPSCalHoliday(ds)) days.add(ds);
+                                cur.setDate(cur.getDate() + 1);
+                                guard++;
+                            }
+                        };
+                        (globalLeaveRepository || []).forEach(l => {
+                            if (!l || l.email !== email || l.status !== 'Approved') return;
+                            if (canonicalLeaveTypeName(l.type) !== 'Sick Leave') return;
+                            const from = l.fromDate || l.date;
+                            if (!from) return;
+                            addRange(from, l.toDate || l.date || from);
+                        });
+                        addRange(startIso, endIso || startIso);
+
+                        const reqStart = parseIsoDateLocal(startIso);
+                        const reqEnd = parseIsoDateLocal(endIso || startIso) || reqStart;
+                        if (!reqStart || !reqEnd) return 0;
+
+                        let runStart = new Date(reqStart);
+                        let runEnd = new Date(reqEnd);
+                        let probe = new Date(reqStart);
+                        let guard = 0;
+                        while (guard < 400) {
+                            probe.setDate(probe.getDate() - 1);
+                            guard++;
+                            if (probe.getDay() === 5) continue;
+                            const ds = formatIsoDateLocal(probe);
+                            if (isPSCalHoliday(ds)) continue;
+                            if (!days.has(ds)) break;
+                            runStart = new Date(probe);
+                        }
+                        probe = new Date(reqEnd);
+                        guard = 0;
+                        while (guard < 400) {
+                            probe.setDate(probe.getDate() + 1);
+                            guard++;
+                            if (probe.getDay() === 5) continue;
+                            const ds = formatIsoDateLocal(probe);
+                            if (isPSCalHoliday(ds)) continue;
+                            if (!days.has(ds)) break;
+                            runEnd = new Date(probe);
+                        }
+
+                        let count = 0;
+                        const cur = new Date(runStart);
+                        guard = 0;
+                        while (cur <= runEnd && guard < 1500) {
+                            const ds = formatIsoDateLocal(cur);
+                            if (cur.getDay() !== 5 && !isPSCalHoliday(ds)) count++;
+                            cur.setDate(cur.getDate() + 1);
+                            guard++;
+                        }
+                        return count;
+                    }
+
                     function toggleLeaveMcField() {
                         const type = document.getElementById('formLeaveType').value;
                         const mcField = document.getElementById('sickLeaveMcField');
@@ -16293,7 +16439,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const usedNoMc = email ? getStaffUsedLeaveDaysForDate(email, 'Sick Leave', 'Without MC', referenceDate) : 0;
                         const limitWithMc = getCeilingLimit('Sick Leave', 'With MC');
                         const limitNoMc = getCeilingLimit('Sick Leave', 'Without MC');
-                        const consecutiveDays = getCurrentLeaveDuration();
+                        const requestRange = getLeaveFormRequestRangeIso();
+                        const consecutiveDays = (email && requestRange.from)
+                            ? getSickLeaveConsecutiveRunDays(email, requestRange.from, requestRange.to)
+                            : getCurrentLeaveDuration();
 
                         const withoutMcRadio = document.querySelector('input[name="mcStatus"][value="Without MC"]');
                         const withMcRadio = document.querySelector('input[name="mcStatus"][value="With MC"]');
@@ -21649,6 +21798,7 @@ function handleSimulatedPhotoChange(inputElement, event) {
                             });
                         }
                         loadLeaveConfigSettings();
+                        loadLeaveCeilingLimits();
                         loadDashboardLeaveVisibility();
                         loadExpiryTrackerData();
                         loadPersonalExpiryData();
