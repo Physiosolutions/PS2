@@ -14630,6 +14630,16 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         });
                     }
 
+                    // Same overlay trick for the approver's past-leave date fixer.
+                    function syncLeavePastFixDisplays() {
+                        [['leavePastFixFrom', 'leavePastFixFromDisplay'], ['leavePastFixTo', 'leavePastFixToDisplay']].forEach(pair => {
+                            const input = document.getElementById(pair[0]);
+                            const display = document.getElementById(pair[1]);
+                            if (!input || !display) return;
+                            display.value = input.value ? formatDateToDDMMYYYY(input.value) : '';
+                        });
+                    }
+
                     function updateLeaveTrackField(cat, id, field, value) {
                         const data = getLeaveTrackingData()[cat] || [];
                         const row = data.find(r => r.id === id);
@@ -15494,14 +15504,18 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         scope.forEach(item => {
                             const isPending = item.status === "Pending Approval";
                             const isAllowedToApprove = isLeaveApprover;
-                            // The owner (or an approver) may manage any leave that is
-                            // still live: pending, upcoming, ongoing, or already finished
-                            // but not yet cancelled. Fully-past approved leave stays
-                            // manageable so a leave that was never actually taken can be
-                            // cancelled; the modal still blocks date edits on it.
+                            // Leave that has already been taken is locked: the owner
+                            // (and everyone else) loses the edit and delete buttons so
+                            // history cannot be changed or erased by accident. A leave
+                            // approver keeps a small, audited correction tool for
+                            // genuine data-entry mistakes.
+                            const isFinished = isLeaveRecordFinished(item);
+                            const isApproverFix = isFinished && isLeaveApprover
+                                && item.status !== 'Rejected' && item.status !== 'Cancelled';
                             const canManageThisLeave = (item.email === currentActiveSessionUser.email || isLeaveApprover)
                                 && item.status !== 'Rejected'
-                                && item.status !== 'Cancelled';
+                                && item.status !== 'Cancelled'
+                                && !isFinished;
                             const actionButtons = [
                                 (isPending && isAllowedToApprove)
                                     ? `<button class="action-btn" style="background:var(--success); padding:2px 5px; font-size:9px;" onclick="auditLeaveRequestStatus(${item.id}, 'Approved');renderLeaveManagementPortlet()">Approve</button>
@@ -15509,6 +15523,9 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                                     : '',
                                 canManageThisLeave
                                     ? `<button class="action-btn" style="background:var(--primary); padding:2px 5px; font-size:9px;" onclick="openLeaveModificationModal(${item.id})">✏️ Manage</button>`
+                                    : '',
+                                isApproverFix
+                                    ? `<button class="action-btn" style="background:var(--primary); padding:2px 5px; font-size:9px;" title="Correct a leave that has already been taken (audited)" onclick="openLeaveModificationModal(${item.id})">🛠️ Fix</button>`
                                     : '',
                                 canDeleteLeaveRecord(item)
                                     ? `<button class="action-btn" style="background:var(--danger); padding:2px 5px; font-size:9px;" title="Delete this leave record" onclick="deleteLeaveRecord(${item.id})">🗑️</button>`
@@ -15528,7 +15545,7 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.mcStatus ? `<span style="font-size:9px; font-weight:700; color:${item.mcStatus === 'With MC' ? 'var(--danger)' : 'var(--text-muted)'};">${item.mcStatus}</span>` : '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">${item.approvedBy || '-'}</td>
             <td style="padding: 4px 6px; font-size: 10px; text-align: center; white-space: nowrap;">
-                ${actionButtons ? `<div style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${actionButtons}</div>` : `<span style="font-style:italic; opacity:0.6; font-size:9px;">—</span>`}
+                ${actionButtons ? `<div style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${actionButtons}</div>` : (isFinished ? `<span title="This leave has already been taken and is locked." style="font-size:9px; color:var(--text-muted); white-space:nowrap;">🔒 Locked</span>` : `<span style="font-style:italic; opacity:0.6; font-size:9px;">—</span>`)}
             </td>
         `;
                             tbody.appendChild(tr);
@@ -16757,11 +16774,32 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         return { from, to, today, pastEnd, pastDays, futureStart };
                     }
 
+                    // A leave record is "finished" (already taken) once it has been
+                    // approved and its last day is behind us. Finished leave is locked
+                    // in the verification queue: the edit and delete buttons are hidden
+                    // so a leave that has already been taken cannot be changed or
+                    // erased by accident. A leave approver keeps a small, audited
+                    // correction tool (cancel it, correct its dates, or fix its MC
+                    // status) for genuine data-entry mistakes.
+                    function isLeaveRecordFinished(item) {
+                        if (!item) return false;
+                        if (item.status !== 'Approved') return false;
+                        const to = item.toDate || item.date;
+                        return !!to && to < leaveTodayIso();
+                    }
+
                     function openLeaveModificationModal(id) {
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (!item) return;
                         if (!canModifyLeaveRecord(item)) {
                             customAlert("You can only change leave on your own record.");
+                            return;
+                        }
+                        // A leave that has already been taken is locked for everyone
+                        // except a leave approver, who keeps an audited correction tool.
+                        if (isLeaveRecordFinished(item)
+                            && !allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("This leave has already been taken and is locked. If it was recorded in error, please ask a leave approver to correct it.");
                             return;
                         }
                         if (item.status === 'Rejected') {
@@ -16775,11 +16813,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         const b = splitLeaveBounds(item);
                         const isPendingRequest = item.status === 'Pending Approval';
                         if (!isPendingRequest && b.to < b.today) {
-                            // Fully-past approved leave. The dates are locked because the
-                            // days have already been recorded, but the owner (or an
-                            // approver) can cancel the whole record when the leave was
-                            // never actually taken. Sick Leave also keeps its MC
-                            // correction. Both changes are audit-noted.
+                            // Fully-past approved leave. The dates are locked for
+                            // everyone except a leave approver, who keeps an audited
+                            // correction tool: cancel a leave that was never taken,
+                            // correct the dates, or fix the Sick Leave MC status.
+                            const isApprover = allowedLeaveApproverRoles.includes(currentActiveSessionUser.position);
                             const pastMcField = item.type === 'Sick Leave' ? `
                 <div class="form-group" style="margin-bottom:10px;">
                     <label>MC Status</label>
@@ -16792,6 +16830,30 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                             const pastSaveMcBtn = item.type === 'Sick Leave'
                                 ? `<button class="action-btn" style="background:var(--primary);" onclick="commitLeaveMcCorrection(${id})">Save MC Correction</button>`
                                 : '';
+                            const pastDateEditor = isApprover ? `
+                <div style="border-top:1px dashed var(--border); margin-top:6px; padding-top:8px;">
+                    <div style="font-size:10px; font-weight:700; margin-bottom:6px; color:var(--text-heading);">Correct the dates (audited)</div>
+                    <div style="display:flex; gap:8px;">
+                        <div class="form-group" style="flex:1; margin-bottom:8px;">
+                            <label>From</label>
+                            <div style="position:relative;display:block;">
+                                <input type="text" id="leavePastFixFromDisplay" value="${formatDateToDDMMYYYY(b.from)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('leavePastFixFrom')" style="width:100%;height:100%;padding:8px 32px 8px 10px; padding-right:32px !important;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                                <input type="date" id="leavePastFixFrom" value="${b.from}" onchange="syncLeavePastFixDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">
+                                ${dateOverlayTriggerHtml('leavePastFixFrom')}
+                            </div>
+                        </div>
+                        <div class="form-group" style="flex:1; margin-bottom:8px;">
+                            <label>To</label>
+                            <div style="position:relative;display:block;">
+                                <input type="text" id="leavePastFixToDisplay" value="${formatDateToDDMMYYYY(b.to)}" readonly placeholder="DD/MM/YYYY" data-trans-skip="1" onclick="openNativeDatePicker('leavePastFixTo')" style="width:100%;height:100%;padding:8px 32px 8px 10px; padding-right:32px !important;border:1px solid var(--border);border-radius:6px;background:var(--bg-inner);color:var(--text-body);font-family:inherit;font-size:11px;cursor:pointer;">
+                                <input type="date" id="leavePastFixTo" value="${b.to}" onchange="syncLeavePastFixDisplays()" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;pointer-events:none;">
+                                ${dateOverlayTriggerHtml('leavePastFixTo')}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size:9px; color:var(--text-muted); margin-bottom:8px;">Changing the dates adjusts the ${item.type} balance and is written into the record note. Use this only to fix a genuine mistake.</div>
+                    <button class="action-btn" style="background:var(--primary);" onclick="commitLeavePastDateCorrection(${id})">Save Corrected Dates</button>
+                </div>` : '';
                             const mountMc = document.getElementById('systemGlobalModalMount');
                             mountMc.innerHTML = `
         <div class="system-inline-modal-overlay">
@@ -16801,10 +16863,11 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     ${item.type} · ${formatDateToDDMMYYYY(b.from)} → ${formatDateToDDMMYYYY(b.to)} (${item.duration}d)<br>
                     Status: <strong>${item.status}</strong>${item.mcStatus ? ` · MC: <strong>${item.mcStatus}</strong>` : ''}
                     ${item.preAnnual ? `<br><strong>Pre-annual</strong> — counts against the next leave year, not this one.` : ''}
-                    <br>This leave is already in the past, so the dates are locked and the days already recorded stay as they are. If the leave was <strong>never actually taken</strong>, cancel the whole record below — the balance is returned and the row is kept as Cancelled for the audit trail.
+                    <br>This leave is already in the past, so it is locked. ${isApprover ? 'As a leave approver you can correct a genuine mistake below — every change is audit-noted.' : 'If it was recorded in error, ask a leave approver to correct it.'}
                 </div>
+                ${pastDateEditor}
                 ${pastMcField}
-                <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px;">
+                <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:6px;">
                     <button class="action-btn" style="background:var(--text-muted);" onclick="closeSystemModalBox()">Close</button>
                     <button class="action-btn" style="background:var(--danger);" onclick="cancelLeaveRemainingDays(${id})">Cancel This Leave</button>
                     ${pastSaveMcBtn}
@@ -16872,6 +16935,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     function commitLeaveReschedule(id) {
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (!item || !canModifyLeaveRecord(item)) return;
+                        if (isLeaveRecordFinished(item)) {
+                            customAlert("This leave has already been taken. Use the approver date correction to fix it.");
+                            return;
+                        }
                         const b = splitLeaveBounds(item);
                         const isPendingRequest = item.status === 'Pending Approval';
 
@@ -17079,6 +17146,115 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         renderLeaveManagementPortlet();
                     }
 
+                    // Correct the dates of an approved leave that has already been
+                    // taken. Approver-only and always audit-noted; the balance is
+                    // adjusted by the difference so the staff member's entitlement
+                    // stays truthful.
+                    function commitLeavePastDateCorrection(id) {
+                        const item = globalLeaveRepository.find(l => l.id === id);
+                        if (!item) return;
+                        if (!currentActiveSessionUser
+                            || !allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) {
+                            customAlert("Only a leave approver can correct a leave that has already been taken.");
+                            return;
+                        }
+                        if (item.status !== 'Approved') {
+                            customAlert("Only an approved leave that has already been taken can be corrected here.");
+                            return;
+                        }
+                        const newFrom = document.getElementById('leavePastFixFrom').value;
+                        const newTo = document.getElementById('leavePastFixTo').value;
+                        if (!newFrom || !newTo) { customAlert("Please pick both the From and To dates."); return; }
+                        if (newTo < newFrom) { customAlert("The end date cannot be before the start date."); return; }
+
+                        const oldFrom = item.fromDate || item.date;
+                        const oldTo = item.toDate || item.date;
+                        const oldDuration = item.duration || calculateLeaveBusinessDays(oldFrom, oldTo) || 0;
+                        if (newFrom === oldFrom && newTo === oldTo) {
+                            customAlert("The dates are unchanged.");
+                            return;
+                        }
+                        const duration = calculateLeaveBusinessDays(newFrom, newTo);
+                        if (!duration || duration < 1) {
+                            customAlert("That range has no working days (Fridays and public holidays are excluded).");
+                            return;
+                        }
+
+                        // Pre-annual days stay inside their allowed window.
+                        if (item.preAnnual) {
+                            const preCycle = getLeaveCycleRangeFromStartIso(item.preAnnualCycleStart) || getStaffNextLeaveCycleRange(item.email);
+                            const currentCycle = getStaffAnniversaryCycleRange(item.email);
+                            const lower = currentCycle ? formatIsoDateLocal(currentCycle.start) : (preCycle ? formatIsoDateLocal(preCycle.start) : '');
+                            const upper = preCycle ? formatIsoDateLocal(preCycle.end) : '';
+                            if (!preCycle || (lower && newFrom < lower) || (upper && newTo > upper)) {
+                                customAlert(`This is pre-annual leave repaid from ${formatLeaveCycleLabel(preCycle)}. New dates must fall between your current leave year and the end of that year.`);
+                                return;
+                            }
+                        }
+
+                        // Keep the sick-leave MC bucket inside its ceiling.
+                        if (item.type === 'Sick Leave' && item.mcStatus) {
+                            const usedInBucket = getStaffUsedLeaveDays(item.email, 'Sick Leave', item.mcStatus)
+                                - (item.status === 'Approved' ? oldDuration : 0);
+                            const limit = getCeilingLimit('Sick Leave', item.mcStatus);
+                            if (usedInBucket + duration > limit) {
+                                customAlert(`${item.mcStatus} ceiling exceeded: ${usedInBucket}d already used of ${limit}d, and this correction is ${duration}d.`);
+                                return;
+                            }
+                        }
+
+                        const oldLabel = formatDateToDDMMYYYY(oldFrom) + ' → ' + formatDateToDDMMYYYY(oldTo) + ` (${oldDuration}d)`;
+                        const newLabel = formatDateToDDMMYYYY(newFrom) + ' → ' + formatDateToDDMMYYYY(newTo) + ` (${duration}d)`;
+                        customConfirm(`Correct ${item.employee}'s ${item.type} from ${oldLabel} to ${newLabel}? This leave has already been taken, so the change is recorded for the audit trail.`, function () {
+                            const live = globalLeaveRepository.find(l => l.id === id);
+                            if (!live) return;
+                            const stamp = formatDateToDDMMYYYY(formatIsoDateLocal(new Date())) + ' by ' + (currentActiveSessionUser.name || currentActiveSessionUser.email);
+
+                            // The record already consumed its old duration from the
+                            // balance (when that rule applies). Give the difference
+                            // back or take it, so the entitlement matches the new
+                            // dates. Pre-annual, part-time and historical records are
+                            // not balance-tracked, so nothing moves for them.
+                            if (leaveApprovalConsumedBalance(live) && oldDuration !== duration) {
+                                adjustLeaveBalanceDelta(live.email, live.type, oldDuration - duration);
+                            }
+
+                            const liveOldFrom = live.fromDate || live.date;
+                            const liveOldTo = live.toDate || live.date;
+                            live.fromDate = newFrom;
+                            live.toDate = newTo;
+                            live.date = newFrom;
+                            live.duration = duration;
+                            live.note = (live.note || '') + ` [Dates corrected ${oldLabel} → ${newLabel} ${stamp}]`;
+
+                            // Keep the mirrored row in the printable leave tracker in step.
+                            const cat = getCategoryForStaff(live.email);
+                            if (cat) {
+                                const data = getLeaveTrackingData()[cat] || [];
+                                let touched = false;
+                                data.forEach(r => {
+                                    if (r.name === live.employee && r.type === live.type
+                                        && r.dateFrom === liveOldFrom && r.dateTo === liveOldTo) {
+                                        r.dateFrom = newFrom;
+                                        r.dateTo = newTo;
+                                        touched = true;
+                                    }
+                                });
+                                if (touched) {
+                                    leaveTrackingData[cat] = data;
+                                    saveLeaveTrackingData();
+                                    renderLeaveTracking();
+                                }
+                            }
+
+                            closeSystemModalBox();
+                            customAlert(`Leave dates corrected.${oldDuration !== duration ? ' The balance was adjusted.' : ''} The change is recorded in the note.`);
+                            persistCoreStores();
+                            synchronizeWorkspaceCoreStatus();
+                            renderLeaveManagementPortlet();
+                        });
+                    }
+
                     function cancelLeaveRemainingDays(id) {
                         const item = globalLeaveRepository.find(l => l.id === id);
                         if (!item || !canModifyLeaveRecord(item)) return;
@@ -17149,6 +17325,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                     // remove their own rejected/cancelled test requests.
                     function canDeleteLeaveRecord(item) {
                         if (!currentActiveSessionUser || !item) return false;
+                        // Leave that has already been taken is never deleted - history
+                        // stays. An approver corrects it instead (cancel it, fix its
+                        // dates, or fix its MC status), all of which are audit-noted.
+                        if (isLeaveRecordFinished(item)) return false;
                         if (allowedLeaveApproverRoles.includes(currentActiveSessionUser.position)) return true;
                         const status = String(item.status || '').toLowerCase();
                         // A staff member may withdraw a request that is still pending
@@ -17160,6 +17340,10 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
 
                     function deleteLeaveRecord(id) {
                         const item = globalLeaveRepository.find(l => l.id === id);
+                        if (item && isLeaveRecordFinished(item)) {
+                            customAlert("This leave has already been taken, so it cannot be deleted. A leave approver can correct it instead.");
+                            return;
+                        }
                         if (!item || !canDeleteLeaveRecord(item)) {
                             customAlert("You cannot delete this leave record.");
                             return;
