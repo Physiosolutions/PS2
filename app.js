@@ -15741,7 +15741,8 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         if (preAnnualRequested) {
                             customAlert("Pre-annual Annual Leave submitted for approval. " + duration +
                                 " day(s) will be deducted from your next leave year (" +
-                                formatLeaveCycleLabel(preAnnualCycle) + "), not this year.");
+                                formatLeaveCycleLabel(preAnnualCycle) + "), not this year. " +
+                                "Your pre-annual permission is now used up - management can re-enable it if you need it again.");
                         } else if (isAutoApproved) {
                             customAlert(type + " request auto-approved! " + duration + " day(s) deducted from your balance.");
                         } else {
@@ -15749,13 +15750,20 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
 
                         document.getElementById('formLeaveNote').value = "";
-                        // Pre-annual is a one-shot switch: once the request has been
-                        // submitted, clear the tick (and its date limits/hint) so the
-                        // staff member does not have to remember to untick it before
-                        // their next, normal leave request.
+                        // Pre-annual is a one-shot grant: once the request has been
+                        // submitted, clear the tick (and its date limits/hint) AND switch
+                        // the staff member's pre-annual permission back off, so the option
+                        // disappears until management grants it again. The key is set to
+                        // false (never deleted) so cloud sync records the change.
                         if (preAnnualRequested) {
                             const preAnnualReset = document.getElementById('formPreAnnual');
                             if (preAnnualReset) preAnnualReset.checked = false;
+                            const selfRecord = globalRosterRepository.find(u => u.email === currentActiveSessionUser.email);
+                            if (selfRecord) {
+                                selfRecord.preAnnualAllowed = false;
+                                delete selfRecord.preAnnualAllowedBy;
+                                delete selfRecord.preAnnualAllowedAt;
+                            }
                             if (typeof togglePreAnnualLeaveField === 'function') togglePreAnnualLeaveField();
                         }
                         // Send external email notification if configured
