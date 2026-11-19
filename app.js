@@ -15694,6 +15694,15 @@ function handleSimulatedStaffRegisterPhotoChange(inputElement, event) {
                         }
 
                         document.getElementById('formLeaveNote').value = "";
+                        // Pre-annual is a one-shot switch: once the request has been
+                        // submitted, clear the tick (and its date limits/hint) so the
+                        // staff member does not have to remember to untick it before
+                        // their next, normal leave request.
+                        if (preAnnualRequested) {
+                            const preAnnualReset = document.getElementById('formPreAnnual');
+                            if (preAnnualReset) preAnnualReset.checked = false;
+                            if (typeof togglePreAnnualLeaveField === 'function') togglePreAnnualLeaveField();
+                        }
                         // Send external email notification if configured
                         const notificationNote = preAnnualRequested
                             ? ((note ? note + ' ' : '') + '[Pre-annual: next leave year ' + formatLeaveCycleLabel(preAnnualCycle) + ']')
