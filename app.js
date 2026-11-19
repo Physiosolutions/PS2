@@ -6164,7 +6164,11 @@
                         } else if (globalRolePermissionsMatrix[userObject.position].includes("admin_hub")) {
                             initialView = "admin_hub";
                         }
-                        triggerSelectedModuleShift(initialView);
+                        // Honour a module hash from the URL (bookmark/share) when the
+                        // role is allowed to open it; otherwise use the default landing
+                        // module. This also keeps the current module across a refresh.
+                        const hashView = getHashModuleId();
+                        triggerSelectedModuleShift(hashView || initialView);
                         synchronizeWorkspaceCoreStatus();
                         checkAndResetLeaveBalances();
                         physioSessionRestorePending = false;
@@ -6343,9 +6347,43 @@
                         parentElement.appendChild(li);
                     }
 
+                    // ---- Lightweight URL routing -------------------------------------
+                    // Each module gets its own hash (e.g. #leave_management) so a module
+                    // can be bookmarked or shared, and the browser Back/Forward buttons
+                    // step through recently viewed modules. The app is still a single
+                    // page; the hash only records which module is on screen.
+                    function getHashModuleId() {
+                        const raw = String(location.hash || '').replace(/^#/, '').trim();
+                        if (!raw) return '';
+                        const role = currentActiveSessionUser && currentActiveSessionUser.position;
+                        if (role && typeof getAllowedModulesForRole === 'function') {
+                            const allowed = getAllowedModulesForRole(role);
+                            if (Array.isArray(allowed) && allowed.length && !allowed.includes(raw)) return '';
+                        }
+                        return raw;
+                    }
+
+                    function syncModuleHash(moduleId) {
+                        if (!moduleId) return;
+                        if (location.hash === '#' + moduleId) return;
+                        // Assigning location.hash pushes a history entry, which is what
+                        // makes the Back/Forward buttons work. The hashchange listener
+                        // ignores it because the module is already the active one.
+                        location.hash = moduleId;
+                    }
+
+                    window.addEventListener('hashchange', function () {
+                        // The login screen ignores the hash; it is honoured on sign-in.
+                        if (!currentActiveSessionUser) return;
+                        const moduleId = getHashModuleId();
+                        if (!moduleId || moduleId === globalActiveViewportModule) return;
+                        triggerSelectedModuleShift(moduleId);
+                    });
+
                     function triggerSelectedModuleShift(targetModuleId) {
                         if (targetModuleId === 'ot_attendance') targetModuleId = 'fdo_attendance';
                         globalActiveViewportModule = targetModuleId;
+                        syncModuleHash(targetModuleId);
                         if (isMobileViewport() && typeof toggleSidebarLayout === 'function') {
                             toggleSidebarLayout(false);
                         }
@@ -17583,6 +17621,9 @@ function handleSimulatedPhotoChange(inputElement, event) {
                         customConfirm("Do you wish to exit the current operations session?", () => {
                             if (currentActiveSessionUser) recordLoginAuditEvent('logout', currentActiveSessionUser, {});
                             currentActiveSessionUser = null;
+                            // Drop any module hash so the next fresh open lands on the
+                            // login screen rather than a stale module.
+                            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
                             portalSwitchOriginEmail = "";
                             forgetSavedSession();
                             try { sessionStorage.removeItem('physioPendingCloudLogin'); } catch (e) { }
